@@ -1,0 +1,1133 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>月夜狼人杀</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@400;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --night:#151A2B;
+  --panel:#1F263C;
+  --panel2:#283049;
+  --line:#39415E;
+  --moon:#E9E4D4;
+  --mist:#8A93B0;
+  --blood:#C2454F;
+  --blood-dim:#7E3A43;
+  --blood-text:#D9949B;
+  --gold:#D4A960;
+  --disp:"Ma Shan Zheng","Songti SC","STSong",serif;
+  --serif:"Noto Serif SC","Songti SC","STSong",serif;
+  --sans:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  background:var(--night);
+  color:var(--moon);
+  font-family:var(--serif);
+  display:flex;
+  flex-direction:column;
+  height:100dvh;
+  overflow:hidden;
+}
+button{font-family:inherit}
+
+/* ---------- header ---------- */
+header{
+  display:flex;align-items:center;gap:16px;
+  padding:10px 18px;
+  border-bottom:1px solid var(--line);
+  flex:none;
+}
+.brand{font-family:var(--disp);font-size:24px;letter-spacing:2px;white-space:nowrap}
+.day-indicator{
+  flex:1;text-align:center;
+  font-family:var(--sans);font-size:12px;letter-spacing:3px;
+  color:var(--mist);text-transform:uppercase;
+}
+.header-actions{display:flex;gap:8px}
+
+/* ---------- main ---------- */
+main{
+  flex:1;min-height:0;
+  display:grid;grid-template-columns:1fr 330px;
+}
+.table-wrap{
+  position:relative;display:flex;padding:14px;min-width:0;min-height:0;
+}
+.table-square{
+  position:relative;margin:auto;
+  width:min(100%,calc(100dvh - 230px),620px);
+  aspect-ratio:1;
+  border-radius:50%;
+  border:1px solid #2B3350;
+  background:radial-gradient(circle at 50% 42%,rgba(212,169,96,.06),rgba(21,26,43,0) 62%);
+  transition:border-color 1.2s ease;
+}
+.table-square.day{border-color:#4A4230}
+
+/* ---------- stage ---------- */
+.stage{
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:44%;text-align:center;pointer-events:none;
+}
+.sky{position:relative;height:64px;margin-bottom:8px}
+.moon,.sun{
+  position:absolute;left:50%;top:50%;
+  width:52px;height:52px;border-radius:50%;
+  transform:translate(-50%,-50%);
+  transition:opacity 1.1s ease,transform 1.1s ease,box-shadow 1.1s ease;
+}
+.moon{
+  background:var(--moon);
+  box-shadow:0 0 36px 8px rgba(233,228,212,.28);
+  overflow:hidden;
+}
+.moon::after{
+  content:"";position:absolute;width:40px;height:40px;border-radius:50%;
+  background:var(--night);top:-11px;left:13px;
+}
+.sun{
+  background:var(--gold);
+  box-shadow:0 0 42px 12px rgba(212,169,96,.38);
+  opacity:0;transform:translate(-50%,-50%) scale(.6);
+}
+.table-square.day .moon{opacity:0;transform:translate(-50%,-50%) scale(.6)}
+.table-square.day .sun{opacity:1;transform:translate(-50%,-50%) scale(1)}
+.phase-title{
+  font-family:var(--disp);font-size:clamp(24px,4.6vw,34px);
+  letter-spacing:3px;line-height:1.25;text-wrap:balance;
+  animation:phaseIn .7s ease both;
+}
+.phase-sub{
+  margin-top:6px;
+  font-family:var(--sans);font-size:12px;letter-spacing:1.5px;color:var(--mist);
+}
+@keyframes phaseIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* ---------- seats ---------- */
+.seat{
+  position:absolute;width:16.5%;
+  transform:translate(-50%,-50%);
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:7px 3px 6px;
+  text-align:center;
+  color:var(--moon);
+  cursor:default;
+  transition:background .2s ease,border-color .2s ease,transform .2s ease,opacity .5s ease;
+}
+.seat-num{
+  font-family:var(--sans);font-variant-numeric:tabular-nums;
+  font-size:11px;color:var(--mist);letter-spacing:1px;
+}
+.seat-name{font-size:14px;margin-top:1px}
+.seat-role{font-size:11px;font-family:var(--sans);margin-top:2px;color:var(--gold)}
+.seat-role.wolf{color:var(--blood)}
+.seat.clickable{cursor:pointer;border-color:var(--gold)}
+.seat.clickable:hover,.seat.clickable:focus-visible{
+  background:var(--panel2);transform:translate(-50%,-50%) scale(1.07);
+  outline:none;
+}
+.seat.dead{opacity:.42;border-color:var(--blood-dim)}
+.seat.dead .seat-name{text-decoration:line-through;text-decoration-color:var(--blood)}
+.seat .vote-badge{
+  position:absolute;top:-9px;right:-7px;
+  background:var(--blood);color:#fff;
+  font-family:var(--sans);font-variant-numeric:tabular-nums;font-size:11px;
+  border-radius:999px;padding:1px 7px;
+}
+.seat.just-died{animation:died .9s ease}
+@keyframes died{
+  0%{background:var(--blood);border-color:var(--blood)}
+  100%{background:var(--panel)}
+}
+
+/* ---------- log ---------- */
+.log-panel{
+  border-left:1px solid var(--line);
+  display:flex;flex-direction:column;min-height:0;
+}
+.log-head{
+  flex:none;padding:10px 16px;
+  font-family:var(--sans);font-size:12px;letter-spacing:3px;color:var(--mist);
+  border-bottom:1px solid var(--line);
+}
+.log-list{flex:1;overflow-y:auto;padding:12px 14px;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+.log-item{
+  border-left:2px solid var(--line);
+  padding:5px 10px;margin-bottom:9px;
+  font-size:13.5px;line-height:1.6;
+  animation:phaseIn .45s ease both;
+}
+.log-item.night{border-color:var(--mist);color:var(--mist);font-size:12.5px}
+.log-item.speech{border-color:var(--line)}
+.log-item.death{border-color:var(--blood);color:var(--blood-text)}
+.log-item.gold{border-color:var(--gold);color:var(--gold)}
+.log-item.sys{border-color:var(--line);color:var(--moon)}
+.log-list::-webkit-scrollbar{width:6px}
+.log-list::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+
+/* ---------- action bar ---------- */
+.action-bar{
+  flex:none;min-height:72px;
+  border-top:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;gap:10px;
+  padding:12px 16px;flex-wrap:wrap;
+}
+.btn{
+  font-family:var(--sans);font-size:13px;
+  background:var(--panel);color:var(--moon);
+  border:1px solid var(--line);border-radius:8px;
+  padding:9px 18px;cursor:pointer;
+  transition:border-color .15s ease,color .15s ease,background .15s ease;
+}
+.btn:hover{border-color:var(--gold);color:var(--gold)}
+.btn:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.btn.ghost{background:transparent;border-color:var(--line);color:var(--mist);padding:6px 12px;font-size:12px}
+.btn.ghost:hover{color:var(--gold);border-color:var(--gold)}
+.btn.gold{border-color:var(--gold);color:var(--gold)}
+.btn.gold:hover{background:rgba(212,169,96,.12)}
+.btn.blood{border-color:var(--blood);color:var(--blood-text)}
+.btn.blood:hover{background:rgba(194,69,79,.14)}
+.btn.primary{background:var(--blood);border-color:var(--blood);color:#fff}
+.btn.primary:hover{background:#D05560;color:#fff}
+.text-input{
+  background:var(--panel);border:1px solid var(--line);border-radius:8px;
+  color:var(--moon);font-family:var(--serif);font-size:13.5px;
+  padding:9px 12px;width:min(240px,55vw);
+}
+.text-input:focus{outline:none;border-color:var(--gold)}
+.action-hint{font-family:var(--sans);font-size:12.5px;color:var(--mist);letter-spacing:1px}
+
+/* ---------- overlay / modal ---------- */
+.overlay{
+  position:fixed;inset:0;z-index:50;
+  background:rgba(9,12,22,.76);
+  display:flex;align-items:center;justify-content:center;
+  padding:20px;
+  animation:phaseIn .3s ease both;
+}
+.modal{
+  background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  padding:30px 34px;max-width:440px;width:100%;
+  text-align:center;
+  max-height:86dvh;overflow-y:auto;
+}
+.modal h2{font-family:var(--disp);font-size:26px;margin:0 0 4px;letter-spacing:2px;font-weight:400}
+.role-name{font-family:var(--disp);font-size:56px;line-height:1.15;letter-spacing:6px;font-weight:400}
+.role-name.wolf{color:var(--blood)}
+.role-name.god{color:var(--gold)}
+.role-name.plain{color:var(--moon)}
+.role-desc{color:var(--mist);font-size:14px;line-height:1.8;margin:14px 0 4px}
+.role-mates{font-family:var(--sans);font-size:13px;color:var(--blood-text);margin-top:8px}
+.modal .btn-row{display:flex;gap:10px;justify-content:center;margin-top:22px;flex-wrap:wrap}
+.rules-body{
+  text-align:left;font-size:13.5px;line-height:1.9;color:var(--moon);
+}
+.rules-body p{margin:0 0 10px}
+.rules-body b{color:var(--gold);font-weight:600}
+.rules-body .r-wolf{color:var(--blood-text)}
+.reveal-grid{
+  display:grid;grid-template-columns:1fr 1fr;gap:6px 18px;
+  font-family:var(--sans);font-size:13px;
+  margin:16px 0 4px;text-align:left;
+}
+.reveal-grid .rv{display:flex;justify-content:space-between;gap:10px;border-bottom:1px dashed var(--line);padding:3px 0}
+.reveal-grid .wolf{color:var(--blood-text)}
+.reveal-grid .god{color:var(--gold)}
+.win-line{font-size:15px;line-height:1.8;margin:6px 0 0}
+
+/* ---------- responsive ---------- */
+@media (max-width:900px){
+  main{grid-template-columns:1fr;grid-template-rows:auto 1fr}
+  .log-panel{border-left:none;border-top:1px solid var(--line)}
+  .table-wrap{padding:10px}
+  .table-square{width:min(100%,52dvh)}
+  .brand{font-size:20px}
+  .day-indicator{letter-spacing:1.5px}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">月夜狼人杀</div>
+  <div class="day-indicator" id="dayIndicator">发牌中</div>
+  <div class="header-actions">
+    <button class="btn ghost" id="speedBtn">加速</button>
+    <button class="btn ghost" id="rulesBtn">规则</button>
+  </div>
+</header>
+
+<main>
+  <section class="table-wrap">
+    <div class="table-square night" id="tableSquare">
+      <div class="stage">
+        <div class="sky"><div class="moon"></div><div class="sun"></div></div>
+        <div class="phase-title" id="phaseTitle">月夜狼人杀</div>
+        <div class="phase-sub" id="phaseSub">九人标准局 · 你与八个村民</div>
+      </div>
+    </div>
+  </section>
+  <aside class="log-panel">
+    <div class="log-head">对局记录</div>
+    <div class="log-list" id="logList"></div>
+  </aside>
+</main>
+
+<footer class="action-bar" id="actionBar"></footer>
+<div id="overlayRoot"></div>
+
+<script>
+"use strict";
+
+/* ================= 常量与状态 ================= */
+
+const WOLF="wolf", VILLAGER="villager", SEER="seer", WITCH="witch", HUNTER="hunter";
+const ROLE_NAME={wolf:"狼人",villager:"村民",seer:"预言家",witch:"女巫",hunter:"猎人"};
+const ROLE_DESC={
+  wolf:"每晚与同伴袭击一名玩家。白天隐藏在人群里,把水搅浑,活到狼群不少于好人为止。",
+  seer:"每晚查验一名玩家的阵营。白天可以跳出来报查杀,带领好人放逐狼人。",
+  witch:"手中有一瓶解药、一瓶毒药,整局各限用一次。今晚倒下的人你可以救——但不能自救。",
+  hunter:"被狼人袭击或被投票放逐时,可以开枪带走一人。但被毒杀时,枪响不了。"
+};
+const ROLE_CLASS={wolf:"wolf",seer:"god",witch:"god",hunter:"god",villager:"plain"};
+const ROLE_TINT={wolf:"wolf",seer:"god",witch:"god",hunter:"god",villager:""};
+const AI_NAMES=["老猎户","王寡妇","教书先生","张屠户","陈货郎","李铁匠","阿花","三叔公"];
+
+const el={
+  indicator:document.getElementById("dayIndicator"),
+  square:document.getElementById("tableSquare"),
+  title:document.getElementById("phaseTitle"),
+  sub:document.getElementById("phaseSub"),
+  logList:document.getElementById("logList"),
+  actionBar:document.getElementById("actionBar"),
+  overlayRoot:document.getElementById("overlayRoot"),
+};
+
+const POS=Array.from({length:9},(_,i)=>{
+  const a=Math.PI/2+i*(2*Math.PI/9);
+  return {x:50+39.5*Math.cos(a),y:50+39.5*Math.sin(a)};
+});
+
+let S=null;
+
+function shuffle(arr){
+  const a=arr.slice();
+  for(let i=a.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [a[i],a[j]]=[a[j],a[i]];
+  }
+  return a;
+}
+const pick=arr=>arr[Math.floor(Math.random()*arr.length)];
+const sleep=ms=>new Promise(r=>setTimeout(r,S&&S.fast?Math.min(ms,70):ms));
+const alive=()=>S.players.filter(p=>p.alive);
+const aliveWolves=()=>alive().filter(p=>p.role===WOLF);
+const byId=id=>S.players[id];
+const label=p=>`${p.id+1}号 ${p.name}`;
+const nameOf=id=>`${id+1}号 ${S.players[id].name}`;
+
+/* ================= 渲染 ================= */
+
+function log(text,cls){
+  const item=document.createElement("div");
+  item.className="log-item "+(cls||"sys");
+  item.textContent=text;
+  el.logList.appendChild(item);
+  el.logList.scrollTop=el.logList.scrollHeight;
+}
+
+function renderSeats(){
+  el.square.querySelectorAll(".seat").forEach(n=>n.remove());
+  const showAll=S.revealAll;
+  const human=S.players[S.humanId];
+  for(const p of S.players){
+    const b=document.createElement("button");
+    b.type="button";
+    b.className="seat";
+    b.style.left=POS[p.id].x+"%";
+    b.style.top=POS[p.id].y+"%";
+    if(!p.alive)b.classList.add("dead");
+    if(S.justDied&&S.justDied.has(p.id))b.classList.add("just-died");
+    if(S.picking&&S.picking.valid.has(p.id)&&p.alive){
+      b.classList.add("clickable");
+      b.addEventListener("click",()=>{
+        if(!S.picking||!S.picking.valid.has(p.id)||!p.alive)return;
+        const res=S.picking.res;
+        S.picking=null;
+        renderSeats();
+        res(p.id);
+      });
+    }
+    const num=document.createElement("div");
+    num.className="seat-num";num.textContent=String(p.id+1);
+    const nm=document.createElement("div");
+    nm.className="seat-name";nm.textContent=p.name;
+    b.append(num,nm);
+
+    let roleShown=null;
+    if(showAll)roleShown=p.role;
+    else if(p.human)roleShown=p.role;
+    else if(human.role===WOLF&&human.alive&&p.role===WOLF)roleShown=WOLF;
+    if(roleShown){
+      const r=document.createElement("div");
+      r.className="seat-role "+(roleShown===WOLF?"wolf":"");
+      r.textContent=ROLE_NAME[roleShown];
+      b.appendChild(r);
+    }
+    if(S.showVotes&&S.showVotes[p.id]){
+      const v=document.createElement("div");
+      v.className="vote-badge";v.textContent=S.showVotes[p.id]+"票";
+      b.appendChild(v);
+    }
+    b.disabled=!p.alive;
+    el.square.appendChild(b);
+  }
+}
+
+function setStage(title,sub,isNight){
+  el.title.textContent=title;
+  el.sub.textContent=sub||"";
+  el.square.classList.toggle("day",!isNight);
+  el.square.classList.toggle("night",!!isNight);
+  el.title.style.animation="none";
+  void el.title.offsetHeight;
+  el.title.style.animation="";
+}
+
+function setIndicator(text){el.indicator.textContent=text;}
+
+function setActions(list,hint){
+  el.actionBar.innerHTML="";
+  if(hint){
+    const h=document.createElement("span");
+    h.className="action-hint";h.textContent=hint;
+    el.actionBar.appendChild(h);
+  }
+  for(const a of list){
+    const b=document.createElement("button");
+    b.type="button";
+    b.className="btn "+(a.cls||"");
+    b.textContent=a.label;
+    b.addEventListener("click",a.onClick);
+    el.actionBar.appendChild(b);
+  }
+}
+function clearActions(){el.actionBar.innerHTML="";}
+
+/* ================= 模态 ================= */
+
+function openModal(build){
+  return new Promise(resolve=>{
+    const ov=document.createElement("div");
+    ov.className="overlay";
+    const m=document.createElement("div");
+    m.className="modal";
+    build(m,value=>{ov.remove();resolve(value);});
+    ov.appendChild(m);
+    el.overlayRoot.appendChild(ov);
+  });
+}
+
+function modalConfirm(text,okLabel,cancelLabel){
+  return openModal((m,close)=>{
+    const p=document.createElement("p");
+    p.className="role-desc";p.textContent=text;
+    const row=document.createElement("div");
+    row.className="btn-row";
+    const ok=document.createElement("button");
+    ok.type="button";ok.className="btn primary";ok.textContent=okLabel;
+    ok.addEventListener("click",()=>close(true));
+    const cancel=document.createElement("button");
+    cancel.type="button";cancel.className="btn";cancel.textContent=cancelLabel;
+    cancel.addEventListener("click",()=>close(false));
+    row.append(ok,cancel);m.append(p,row);
+  });
+}
+
+function modalChoice(text,options){
+  return openModal((m,close)=>{
+    const p=document.createElement("p");
+    p.className="role-desc";p.textContent=text;
+    const row=document.createElement("div");
+    row.className="btn-row";
+    options.forEach((opt,i)=>{
+      const b=document.createElement("button");
+      b.type="button";
+      b.className="btn "+(i===0?"primary":"");
+      b.textContent=opt;
+      b.addEventListener("click",()=>close(i));
+      row.appendChild(b);
+    });
+    m.append(p,row);
+  });
+}
+
+function showRoleModal(){
+  const me=S.players[S.humanId];
+  return openModal((m,close)=>{
+    const h=document.createElement("h2");
+    h.textContent="你的身份";
+    const rn=document.createElement("div");
+    rn.className="role-name "+ROLE_CLASS[me.role];
+    rn.textContent=ROLE_NAME[me.role];
+    const d=document.createElement("p");
+    d.className="role-desc";
+    d.textContent=me.role===VILLAGER
+      ?"没有技能,但你的耳朵和推理就是武器。听发言、看投票,把狼人找出来。"
+      :ROLE_DESC[me.role];
+    m.append(h,rn,d);
+    if(me.role===WOLF){
+      const mates=S.players.filter(p=>p.role===WOLF&&!p.human);
+      const mate=document.createElement("p");
+      mate.className="role-mates";
+      mate.textContent="你的同伴:"+mates.map(label).join("、");
+      m.appendChild(mate);
+    }
+    const row=document.createElement("div");
+    row.className="btn-row";
+    const start=document.createElement("button");
+    start.type="button";start.className="btn primary";start.textContent="天黑请闭眼";
+    start.addEventListener("click",()=>close());
+    row.appendChild(start);m.appendChild(row);
+  });
+}
+
+function showRulesModal(){
+  return openModal((m,close)=>{
+    const h=document.createElement("h2");h.textContent="对局规则";
+    const body=document.createElement("div");
+    body.className="rules-body";
+    body.innerHTML=
+      "<p><b>配置</b> 九人标准局:<span class='r-wolf'>狼人 ×3</span> · 村民 ×3 · 预言家 · 女巫 · 猎人。身份随机发放。</p>"+
+      "<p><b>夜晚</b> 狼人袭击 → 预言家查验 → 女巫决定是否用药。解药、毒药各限一次,<b>女巫不能自救</b>。</p>"+
+      "<p><b>白天</b> 公布死讯 → 按座位号轮流发言 → 投票放逐,得票最多者出局;<b>平票则无人出局</b>。</p>"+
+      "<p><b>猎人</b> 被袭击或被放逐时可开枪带走一人;<b>被毒杀则不能开枪</b>。</p>"+
+      "<p><b>胜负</b> 狼人全部出局,好人胜;狼人数<b>不少于</b>好人数,狼人胜。</p>"+
+      "<p>你出局后自动进入上帝视角,可以看到所有身份。</p>";
+    const row=document.createElement("div");
+    row.className="btn-row";
+    const ok=document.createElement("button");
+    ok.type="button";ok.className="btn";ok.textContent="知道了";
+    ok.addEventListener("click",()=>close());
+    row.appendChild(ok);m.append(h,body,row);
+  });
+}
+
+function pickSeat(cands,prompt){
+  return new Promise(res=>{
+    S.picking={valid:new Set(cands.map(p=>p.id)),res};
+    setActions([],prompt+"(点击座位)");
+    renderSeats();
+  });
+}
+
+/* ================= 新对局 ================= */
+
+function newGame(){
+  const roles=shuffle([WOLF,WOLF,WOLF,VILLAGER,VILLAGER,VILLAGER,SEER,WITCH,HUNTER]);
+  const humanIdx=Math.floor(Math.random()*9);
+  let nameIdx=0;
+  S={
+    day:0,over:false,win:null,fast:S?S.fast:false,
+    humanId:humanIdx,
+    revealAll:false,
+    witchHeal:true,witchPoison:true,
+    saved:false,poisonTarget:null,knifeTarget:null,
+    claims:[],wolfJumped:false,
+    justDied:new Set(),
+    picking:null,showVotes:null,spokenToday:new Set(),
+    players:roles.map((role,i)=>({
+      id:i,role,alive:true,human:i===humanIdx,
+      name:i===humanIdx?"你":AI_NAMES[nameIdx++],
+      susp:Array.from({length:9},()=>0),
+      checks:{},
+    })),
+  };
+  el.logList.innerHTML="";
+  renderSeats();
+}
+
+/* ================= AI ================= */
+
+function villageAIs(){
+  return S.players.filter(p=>!p.human&&p.role!==WOLF&&p.alive);
+}
+
+function applyClaim(claim){
+  if(S.claims.some(c=>c.seer===claim.seer&&c.target===claim.target))return;
+  S.claims.push(claim);
+  for(const v of villageAIs()){
+    if(claim.result==="sha")v.susp[claim.target]+=8;
+    const claimants=S.claims.map(c=>c.seer);
+    if(claimants.length>=2){
+      for(const cid of claimants)if(cid!==v.id)v.susp[cid]+=5;
+    }else if(claim.seer!==v.id){
+      v.susp[claim.seer]-=3;
+    }
+  }
+}
+
+function aiWolfChoose(){
+  const cands=alive().filter(p=>p.role!==WOLF);
+  const claimants=S.claims
+    .map(c=>c.seer)
+    .filter(id=>S.players[id].alive&&S.players[id].role!==WOLF);
+  if(claimants.length&&Math.random()<0.8)return pick(claimants);
+  return pick(cands);
+}
+
+function aiSeerCheck(seer){
+  const cands=alive().filter(p=>p.id!==seer.id&&!(p.id in seer.checks));
+  if(!cands.length)return;
+  let best=null,bestScore=-Infinity;
+  for(const c of cands){
+    const score=seer.susp[c.id]+Math.random()*2;
+    if(score>bestScore){bestScore=score;best=c;}
+  }
+  seer.checks[best.id]=best.role===WOLF?"wolf":"good";
+}
+
+function aiWitch(witch){
+  const t=S.knifeTarget;
+  if(S.witchHeal&&t!=null&&t!==witch.id){
+    const isClaimant=S.claims.some(c=>c.seer===t);
+    const pSave=S.day===1?0.85:(isClaimant?0.65:0.22);
+    if(Math.random()<pSave){S.saved=true;S.witchHeal=false;}
+  }
+  if(S.witchPoison&&S.day>=2){
+    let best=null,bestScore=0;
+    for(const p of alive()){
+      if(p.id===witch.id||p.id===t&&S.saved)continue;
+      if(witch.susp[p.id]>bestScore){bestScore=witch.susp[p.id];best=p;}
+    }
+    if(best&&bestScore>=7&&Math.random()<0.55){
+      S.poisonTarget=best.id;S.witchPoison=false;
+    }
+  }
+}
+
+function topSusp(ai,exclude){
+  let best=null,bestScore=-Infinity;
+  for(const p of alive()){
+    if(p.id===ai.id||exclude&&exclude.has(p.id))continue;
+    const score=ai.susp[p.id]+Math.random();
+    if(score>bestScore){bestScore=score;best=p;}
+  }
+  return best;
+}
+
+function avgSusp(id){
+  const vs=villageAIs();
+  if(!vs.length)return 0;
+  return vs.reduce((s,v)=>s+v.susp[id],0)/vs.length;
+}
+
+function aiVote(p){
+  const others=alive().filter(q=>q.id!==p.id);
+  if(!others.length)return null;
+  if(p.role===WOLF){
+    const nonWolf=others.filter(q=>q.role!==WOLF);
+    if(!nonWolf.length)return pick(others).id;
+    const myClaim=S.claims.find(c=>c.seer===p.id);
+    if(myClaim&&S.players[myClaim.target].alive&&S.players[myClaim.target].role!==WOLF)
+      return myClaim.target;
+    let best=null,bestScore=-Infinity;
+    for(const q of nonWolf){
+      const score=avgSusp(q.id)+Math.random();
+      if(score>bestScore){bestScore=score;best=q;}
+    }
+    return best?best.id:pick(nonWolf).id;
+  }
+  if(p.role===SEER){
+    const knownWolf=others.find(q=>p.checks[q.id]==="wolf");
+    if(knownWolf)return knownWolf.id;
+  }
+  const t=topSusp(p);
+  return t?t.id:pick(others).id;
+}
+
+// 只点评已经发过言的人:没开口的人谈不上"发言有问题"
+function aiAccuseTarget(p){
+  const spoken=[...S.spokenToday].filter(id=>id!==p.id&&S.players[id].alive);
+  if(!spoken.length)return null;
+  let pool=spoken;
+  if(p.role===WOLF){
+    pool=spoken.filter(id=>S.players[id].role!==WOLF);
+    if(!pool.length)return null;
+  }
+  let best=null,bestScore=-Infinity;
+  for(const id of pool){
+    const score=(p.role===WOLF?avgSusp(id):p.susp[id])+Math.random();
+    if(score>bestScore){bestScore=score;best=id;}
+  }
+  return best!=null?S.players[best]:null;
+}
+
+function aiSpeech(p){
+  const shaClaims=S.claims.filter(c=>c.result==="sha"&&S.players[c.target].alive);
+  const claimants=[...new Set(S.claims.map(c=>c.seer))].filter(id=>S.players[id].alive);
+
+  if(p.role===SEER){
+    const entries=Object.entries(p.checks);
+    if(entries.length){
+      const [tid,res]=entries[entries.length-1];
+      applyClaim({seer:p.id,target:+tid,result:res==="wolf"?"sha":"water",fake:false});
+      return res==="wolf"
+        ?`我是预言家!昨晚验了${nameOf(+tid)},是查杀!今天全票把他送走。`
+        :`我是预言家,昨晚验了${nameOf(+tid)},金水。他可以放一放,查杀另找。`;
+    }
+  }
+  if(p.role===WOLF&&!S.wolfJumped){
+    const exposed=S.claims.find(c=>c.target===p.id&&c.result==="sha"&&!c.fake);
+    if(exposed){
+      S.wolfJumped=true;
+      const counter=exposed.seer;
+      applyClaim({seer:p.id,target:counter,result:"sha",fake:true});
+      return `我不是狼!我才是预言家,昨晚验了${nameOf(counter)},查杀!他血口喷人,想泼脏水害我。`;
+    }
+  }
+  if(claimants.length>=2){
+    const a=claimants[0],b=claimants[1];
+    const doubt=p.susp[a]>=p.susp[b]?a:b;
+    return `两个"预言家"必有一个是狼。${nameOf(a)}和${nameOf(b)}我更不信${nameOf(doubt)},先出他。`;
+  }
+  if(shaClaims.length&&p.role!==WOLF){
+    const c=shaClaims[shaClaims.length-1];
+    return `听预言家的,${nameOf(c.seer)}报了查杀,我这一票给${nameOf(c.target)}。`;
+  }
+  const t=aiAccuseTarget(p);
+  if(t&&Math.random()<0.7){
+    return p.role===WOLF
+      ?`我平民一个,昨晚睡得很沉。倒觉得${nameOf(t.id)}的发言最经不起推敲,票给他。`
+      :`我觉得${nameOf(t.id)}有点悬,发言总往边上绕,先记他一笔。`;
+  }
+  return pick([
+    "我是个好人,昨晚过得平平常常,先听大家的。",
+    "信息还太少,我不想乱踩人,先听听后面怎么说。",
+    "我是好人,今天节奏别太快,把发言听全了再投。",
+    "昨晚的事我不清楚,但我的票不会乱投,谁心虚我投谁。",
+  ]);
+}
+
+/* ================= 阶段流程 ================= */
+
+async function nightPhase(){
+  setIndicator(`第 ${S.day} 天 · 夜晚`);
+  setStage("天黑请闭眼",`第 ${S.day} 夜`,true);
+  await sleep(1100);
+
+  // 狼人
+  setStage("狼人请睁眼","狼人正在选择猎物",true);
+  await sleep(900);
+  const wolves=aliveWolves();
+  if(wolves.length){
+    const humanWolf=wolves.find(p=>p.human);
+    if(humanWolf){
+      const cands=alive().filter(p=>p.role!==WOLF);
+      const t=await pickSeat(cands,"选择今晚的猎物");
+      S.knifeTarget=t;
+      clearActions();
+      log(`你们把獠牙对准了 ${nameOf(t)}。`,"night");
+    }else{
+      S.knifeTarget=aiWolfChoose().id;
+      log("狼人睁开了眼睛,夜色中传来低语。","night");
+    }
+  }
+  await sleep(700);
+
+  // 预言家
+  setStage("预言家请睁眼","命运的水晶泛起微光",true);
+  await sleep(900);
+  const seer=S.players.find(p=>p.role===SEER);
+  if(seer&&seer.alive){
+    if(seer.human){
+      const cands=alive().filter(p=>p.id!==seer.id);
+      const t=await pickSeat(cands,"查验一名玩家");
+      clearActions();
+      const res=byId(t).role===WOLF?"wolf":"good";
+      seer.checks[t]=res;
+      log(`【只有你知道】你查验了 ${nameOf(t)} —— ${res==="wolf"?"狼人!":"好人"}`,"gold");
+      await sleep(800);
+    }else{
+      aiSeerCheck(seer);
+      log("预言家凝视着水晶,无人知晓他看到了什么。","night");
+    }
+  }else{
+    log("预言家的座位空着……水晶蒙上了灰。","night");
+  }
+  await sleep(700);
+
+  // 女巫
+  setStage("女巫请睁眼","药瓶在黑暗中轻轻作响",true);
+  await sleep(900);
+  S.saved=false;S.poisonTarget=null;
+  const witch=S.players.find(p=>p.role===WITCH);
+  if(witch&&witch.alive&&(S.witchHeal||S.witchPoison)){
+    if(witch.human){
+      await humanWitch(witch);
+    }else{
+      aiWitch(witch);
+      log("女巫掂量着手中的药瓶。","night");
+    }
+  }else{
+    log("女巫的药已经用尽,夜风掠过空瓶。","night");
+  }
+  await sleep(800);
+}
+
+async function humanWitch(witch){
+  const t=S.knifeTarget;
+  if(S.witchHeal&&t!=null){
+    if(t!==witch.id){
+      const save=await modalConfirm(
+        `今晚 ${nameOf(t)} 被袭击了。要使用仅有的解药吗?`,
+        "用解药救人","见死不救"
+      );
+      if(save){
+        S.saved=true;S.witchHeal=false;
+        log(`【只有你知道】你用解药救下了 ${nameOf(t)}。`,"gold");
+      }
+    }else{
+      log("【只有你知道】今晚倒下的是你自己……解药救不了自己。","gold");
+      await sleep(900);
+    }
+  }
+  if(S.witchPoison){
+    const use=await modalChoice("要使用毒药吗?(整局仅此一瓶)",["用毒药","不用"]);
+    if(use===0){
+      const cands=alive().filter(p=>p.id!==witch.id);
+      const tgt=await pickSeat(cands,"选择毒杀对象");
+      S.poisonTarget=tgt;S.witchPoison=false;
+      clearActions();
+      log(`【只有你知道】你把毒药倒进了 ${nameOf(tgt)} 的水杯。`,"gold");
+    }
+  }
+}
+
+async function dawnPhase(){
+  setIndicator(`第 ${S.day} 天 · 白天`);
+  setStage("天亮了",`第 ${S.day} 天`,false);
+  // 毒与刀命中同一人时,只算毒杀(被毒的猎人开不了枪)
+  const deaths=[];
+  if(S.poisonTarget!=null)deaths.push({id:S.poisonTarget,cause:"poison"});
+  if(S.knifeTarget!=null&&!S.saved&&S.knifeTarget!==S.poisonTarget)
+    deaths.push({id:S.knifeTarget,cause:"knife"});
+
+  if(!deaths.length){
+    log(`第 ${S.day} 天清晨:昨夜是平安夜,无人死亡。`,"sys");
+    await sleep(1200);
+  }else{
+    S.justDied=new Set(deaths.map(d=>d.id));
+    for(const d of deaths){
+      byId(d.id).alive=false;
+      log(`${nameOf(d.id)} 被发现死在了家里。`,"death");
+    }
+    renderSeats();
+    await sleep(1400);
+    S.justDied.clear();
+    renderSeats();
+    for(const d of deaths){
+      await hunterCheck(byId(d.id),d.cause);
+    }
+  }
+  if(S.players[S.humanId].alive===false&&!S.revealAll){
+    S.revealAll=true;
+    log("你出局了——转入场外,以上帝视角继续观战,所有身份已揭开。","sys");
+    renderSeats();
+  }
+}
+
+async function hunterCheck(p,cause){
+  if(p.role!==HUNTER)return;
+  if(cause==="poison"){
+    if(p.human)log("【只有你知道】你被毒杀,猎枪从手中滑落——开不了枪。","gold");
+    return;
+  }
+  if(p.human){
+    const shoot=await modalConfirm("猎人的时刻:你要开枪带走一人吗?","开枪","放弃");
+    if(shoot){
+      const cands=alive().filter(q=>q.id!==p.id);
+      const t=await pickSeat(cands,"猎枪瞄准……");
+      clearActions();
+      killByShot(t);
+    }else{
+      log("猎人收起了枪,沉默地离场。","sys");
+    }
+  }else{
+    const t=topSusp(p);
+    if(t){
+      await sleep(700);
+      killByShot(t.id);
+    }
+  }
+}
+
+function killByShot(id){
+  const p=byId(id);
+  p.alive=false;
+  S.justDied=new Set([id]);
+  log(`猎人的枪响了!子弹带走了 ${nameOf(id)}。`,"death");
+  renderSeats();
+  setTimeout(()=>{S.justDied.clear();renderSeats();},1000);
+}
+
+async function speechPhase(){
+  setStage("自由发言",`第 ${S.day} 天 · 按座位号轮流发言`,false);
+  await sleep(700);
+  S.spokenToday=new Set();
+  for(const p of alive()){
+    if(p.human){
+      await playerSpeech();
+    }else{
+      const line=aiSpeech(p);
+      log(`${nameOf(p.id)}:${line}`,"speech");
+      await sleep(1500);
+    }
+    S.spokenToday.add(p.id);
+  }
+}
+
+function playerSpeech(){
+  return new Promise(res=>{
+    const me=S.players[S.humanId];
+    const finish=(line,effect)=>{
+      clearActions();
+      log(`${nameOf(me.id)}:${line}`,"speech");
+      if(effect)effect();
+      res();
+    };
+    const actions=[
+      {label:"我是好人,先过",cls:"btn",onClick:()=>finish("我是好人,先听大家的。")},
+      {
+        label:"指认怀疑对象",
+        onClick:async()=>{
+          clearActions();
+          const cands=alive().filter(q=>q.id!==me.id);
+          const t=await pickSeat(cands,"你怀疑谁");
+          clearActions();
+          finish(`我怀疑${nameOf(t)},他的发言有问题。`,()=>{
+            for(const v of villageAIs())v.susp[t]+=2;
+          });
+        },
+      },
+    ];
+    if(me.role===SEER&&Object.keys(me.checks).length){
+      const entries=Object.entries(me.checks);
+      const [tid,r]=entries[entries.length-1];
+      actions.push({
+        label:"跳预言家,报昨晚查验",cls:"gold",
+        onClick:()=>{
+          const isWolf=r==="wolf";
+          finish(
+            isWolf?`我是预言家!昨晚验了${nameOf(+tid)},是查杀!今天全票出他。`
+                  :`我是预言家,昨晚验了${nameOf(+tid)},是金水,他可以放一放。`,
+            ()=>applyClaim({seer:me.id,target:+tid,result:isWolf?"sha":"water",fake:false})
+          );
+        },
+      });
+    }
+    if(me.role===WOLF){
+      actions.push({
+        label:"悍跳预言家",cls:"blood",
+        onClick:async()=>{
+          clearActions();
+          const cands=alive().filter(q=>q.id!==me.id&&q.role!==WOLF);
+          if(!cands.length){renderSeats();return finish("我是好人,先听大家的。");}
+          const t=await pickSeat(cands,"报一个假的查杀对象");
+          clearActions();
+          S.wolfJumped=true;
+          finish(`我是预言家!昨晚验了${nameOf(t)},是查杀!`,()=>{
+            applyClaim({seer:me.id,target:t,result:"sha",fake:true});
+          });
+        },
+      });
+    }
+    // 自由发言
+    setActions(actions,"轮到你发言");
+    const input=document.createElement("input");
+    input.type="text";input.className="text-input";
+    input.placeholder="或者,自由说两句……";
+    const send=document.createElement("button");
+    send.type="button";send.className="btn";send.textContent="发言";
+    send.addEventListener("click",()=>{
+      const v=input.value.trim();
+      if(!v)return;
+      finish(v);
+    });
+    input.addEventListener("keydown",e=>{
+      if(e.key==="Enter"&&input.value.trim())finish(input.value.trim());
+    });
+    el.actionBar.append(input,send);
+    input.focus();
+  });
+}
+
+async function votePhase(){
+  setStage("投票放逐",`第 ${S.day} 天 · 得票最多者出局,平票则无人出局`,false);
+  await sleep(600);
+  const votes=new Map();
+  for(const p of alive()){
+    let t;
+    if(p.human){
+      const cands=alive().filter(q=>q.id!==p.id);
+      t=await pickSeat(cands,"投出一票");
+      clearActions();
+    }else{
+      t=aiVote(p);
+      await sleep(280);
+    }
+    if(t!=null){
+      if(!votes.has(t))votes.set(t,[]);
+      votes.get(t).push(p.id);
+    }
+  }
+  const counts={};
+  for(const [t,voters]of votes){
+    counts[t]=voters.length;
+    log(`${nameOf(t)} ← ${voters.map(id=>id+1+"号").join("、")}`, "sys");
+  }
+  S.showVotes=counts;
+  renderSeats();
+  await sleep(1800);
+  S.showVotes=null;
+  renderSeats();
+
+  let maxTarget=null,maxCount=0,tie=false;
+  for(const [t,n]of Object.entries(counts)){
+    if(n>maxCount){maxCount=n;maxTarget=+t;tie=false;}
+    else if(n===maxCount)tie=true;
+  }
+  if(maxTarget==null||tie){
+    log("平票——今天没有人被放逐,村庄在争执中入夜。","sys");
+    return;
+  }
+  const exiled=byId(maxTarget);
+  exiled.alive=false;
+  S.justDied=new Set([maxTarget]);
+  log(`${nameOf(maxTarget)} 被村民投票放逐,离开了村庄。`,"death");
+  renderSeats();
+  await sleep(1300);
+  S.justDied.clear();
+  renderSeats();
+  if(exiled.human&&!S.revealAll){
+    S.revealAll=true;
+    log("你被放逐了——转入场外,以上帝视角继续观战,所有身份已揭开。","sys");
+    renderSeats();
+  }else if(!exiled.human){
+    log(pick([
+      `${nameOf(maxTarget)} 走前高喊:"我是冤枉的!"`,
+      `${nameOf(maxTarget)} 冷笑一声,一言不发地离开了。`,
+      `${nameOf(maxTarget)} 叹了口气:"你们会后悔的。"`,
+    ]),"sys");
+  }
+  await hunterCheck(exiled,"exile");
+  if(S.players[S.humanId].alive===false&&!S.revealAll){
+    S.revealAll=true;
+    log("你出局了——以上帝视角继续观战,所有身份已揭开。","sys");
+    renderSeats();
+  }
+}
+
+/* ================= 胜负 ================= */
+
+function checkWin(){
+  const w=aliveWolves().length;
+  const g=alive().length-w;
+  if(w===0){S.over=true;S.win="good";return true;}
+  if(w>=g){S.over=true;S.win="wolf";return true;}
+  return false;
+}
+
+function endGame(){
+  S.revealAll=true;
+  renderSeats();
+  clearActions();
+  const goodWin=S.win==="good";
+  setStage(goodWin?"黎明降临":"狼群统治了村庄",
+    goodWin?"所有狼人出局":"狼人不再需要伪装",goodWin);
+  setIndicator("对局结束");
+  log(goodWin?"所有狼人出局——好人胜利!":"狼人屠城——狼人胜利!",goodWin?"gold":"death");
+  let restarted=false;
+  openModal((m,close)=>{
+    const h=document.createElement("h2");
+    h.textContent=goodWin?"好人胜利":"狼人胜利";
+    h.style.color=goodWin?"var(--gold)":"var(--blood)";
+    const line=document.createElement("p");
+    line.className="win-line";
+    line.textContent=goodWin
+      ?"最后一头狼倒下了。晨光爬上山脊,幸存的村民彼此搀扶着走出家门。"
+      :"夜再也不会结束。狼人撕下伪装,空荡的村庄只剩下风声。";
+    const grid=document.createElement("div");
+    grid.className="reveal-grid";
+    for(const p of S.players){
+      const rv=document.createElement("div");
+      rv.className="rv "+ROLE_TINT[p.role];
+      const who=document.createElement("span");
+      who.textContent=`${p.id+1}号 ${p.name}${p.alive?"":"(出局)"}`;
+      const role=document.createElement("span");
+      role.textContent=ROLE_NAME[p.role];
+      rv.append(who,role);
+      grid.appendChild(rv);
+    }
+    const row=document.createElement("div");
+    row.className="btn-row";
+    const again=document.createElement("button");
+    again.type="button";again.className="btn primary";again.textContent="再来一局";
+    again.addEventListener("click",()=>{restarted=true;close();startGame();});
+    const stay=document.createElement("button");
+    stay.type="button";stay.className="btn";stay.textContent="查看战局";
+    stay.addEventListener("click",()=>close());
+    row.append(again,stay);
+    m.append(h,line,grid,row);
+  }).then(()=>{
+    if(restarted)return;
+    setActions([{label:"再来一局",cls:"primary",onClick:()=>startGame()}],"对局已结束");
+  });
+}
+
+/* ================= 主流程 ================= */
+
+async function runGame(){
+  await showRoleModal();
+  while(!S.over){
+    S.day++;
+    await nightPhase();
+    await dawnPhase();
+    if(checkWin())break;
+    await speechPhase();
+    await votePhase();
+    if(checkWin())break;
+  }
+  if(S.over)endGame();
+}
+
+function startGame(){
+  newGame();
+  setIndicator("第 1 天 · 夜晚");
+  runGame();
+}
+
+/* ================= 全局按钮 ================= */
+
+document.getElementById("speedBtn").addEventListener("click",e=>{
+  S.fast=!S.fast;
+  e.target.textContent=S.fast?"常速":"加速";
+});
+document.getElementById("rulesBtn").addEventListener("click",showRulesModal);
+
+startGame();
+</script>
+</body>
+</html>
