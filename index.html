@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>月夜狼人杀</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@400;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <div class="brand">月夜狼人杀</div>
+  <div class="day-indicator" id="dayIndicator">发牌中</div>
+  <div class="header-actions">
+    <button class="btn ghost" id="speedBtn">加速</button>
+    <button class="btn ghost" id="rulesBtn">规则</button>
+  </div>
+</header>
+
+<main>
+  <section class="table-wrap">
+    <div class="table-square night" id="tableSquare">
+      <div class="stage">
+        <div class="sky"><div class="moon"></div><div class="sun"></div></div>
+        <div class="phase-title" id="phaseTitle">月夜狼人杀</div>
+        <div class="phase-sub" id="phaseSub">九人标准局 · 你与八个村民</div>
+      </div>
+    </div>
+  </section>
+  <aside class="log-panel">
+    <div class="log-head">对局记录</div>
+    <div class="log-list" id="logList"></div>
+  </aside>
+</main>
+
+<footer class="action-bar" id="actionBar"></footer>
+<div id="overlayRoot"></div>
+
+<script src="ui.js"></script>
+<script src="ai.js"></script>
+<script src="engine.js"></script>
+</body>
+</html>
