@@ -289,6 +289,82 @@ const view={
     });
   },
 
+  /* LLM 接入设置:OpenAI 兼容端点(接口地址 / API Key / 模型名) */
+  openSettingsModal(){
+    return openModal((m,close)=>{
+      const h=document.createElement("h2");h.textContent="AI 设置";
+      const body=document.createElement("div");
+      body.className="rules-body";
+      body.innerHTML=
+        "<p>配置任意 <b>OpenAI 兼容接口</b>后,8 名 AI 玩家将改由大模型驱动:它们记得本局每天的死亡、发言与投票,自己推理、撒谎、站队、投票。不配置则使用内置规则 AI。</p>"+
+        "<p>兼容 DeepSeek、通义千问、Kimi、智谱、Ollama 等。密钥只保存在本浏览器(localStorage),不会上传到别处。</p>";
+
+      const fields=[["baseUrl","接口地址","https://api.deepseek.com/v1"],
+        ["apiKey","API Key","sk-…"],["model","模型名","deepseek-chat"]];
+      const inputs={};
+      const cur=LLM.config||{};
+      for(const [key,label,ph]of fields){
+        const wrap=document.createElement("p");
+        wrap.style.margin="10px 0 4px";
+        const lab=document.createElement("div");
+        lab.className="action-hint";lab.textContent=label;
+        const input=document.createElement("input");
+        input.type=key==="apiKey"?"password":"text";
+        input.className="text-input";
+        input.style.width="100%";
+        input.placeholder=ph;
+        input.value=cur[key]||"";
+        wrap.append(lab,input);
+        body.appendChild(wrap);
+        inputs[key]=input;
+      }
+      const status=document.createElement("p");
+      status.className="action-hint";
+      status.style.minHeight="18px";
+      status.textContent=LLM.ready()?"已配置,当前生效模型:"+LLM.config.model:"";
+      body.appendChild(status);
+
+      const row=document.createElement("div");
+      row.className="btn-row";
+      const mk=(text,cls,fn)=>{
+        const b=document.createElement("button");
+        b.type="button";b.className="btn "+(cls||"");
+        b.textContent=text;
+        b.addEventListener("click",fn);
+        row.appendChild(b);
+      };
+      mk("测试连接","",async btn=>{
+        status.textContent="测试中……";
+        LLM.config={baseUrl:inputs.baseUrl.value.trim(),
+          apiKey:inputs.apiKey.value.trim(),model:inputs.model.value.trim()};
+        try{
+          await LLM.chat("你是一个连通性测试。","请只回复:OK",{maxTokens:10,timeout:15000});
+          status.textContent="连接成功 ✓";
+        }catch(e){
+          status.textContent="连接失败:"+e.message;
+          LLM.load();
+        }
+      });
+      mk("保存","primary",()=>{
+        const cfg={baseUrl:inputs.baseUrl.value.trim(),
+          apiKey:inputs.apiKey.value.trim(),model:inputs.model.value.trim()};
+        if(cfg.baseUrl&&cfg.apiKey&&cfg.model){
+          LLM.save(cfg);
+          close();
+        }else{
+          status.textContent="三项都要填写才能保存。";
+        }
+      });
+      mk("清除","",()=>{
+        LLM.clear();
+        status.textContent="已清除,恢复内置规则 AI。";
+        for(const k in inputs)inputs[k].value="";
+      });
+      mk("关闭","",()=>{LLM.load();close();});
+      m.append(h,body,row);
+    });
+  },
+
   sleep(ms){
     return new Promise(r=>setTimeout(r,this.fast?Math.min(ms,70):ms));
   },
@@ -301,3 +377,4 @@ document.getElementById("speedBtn").addEventListener("click",e=>{
   e.target.textContent=view.fast?"常速":"加速";
 });
 document.getElementById("rulesBtn").addEventListener("click",()=>view.openRulesModal());
+document.getElementById("llmBtn").addEventListener("click",()=>view.openSettingsModal());

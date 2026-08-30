@@ -1,17 +1,22 @@
 "use strict";
 /* ============================================================
    engine.js —— 游戏引擎:状态机、阶段流程、胜负判定
-   只依赖 view 接口(ui.js)与 AI 决策/TemplateSpeech(ai.js),不碰 DOM
+   只依赖 view 接口(ui.js)、AI 决策(ai.js)与 LLM 大脑(llm.js),不碰 DOM
    ============================================================ */
 
 let S=null;
-const speech=new TemplateSpeech();
+const brain=new HybridBrain();
 
 const alive=()=>S.players.filter(p=>p.alive);
 const aliveWolves=()=>alive().filter(p=>p.role===WOLF);
 const byId=id=>S.players[id];
 const nameOf=id=>`${id+1}号 ${S.players[id].name}`;
 const labelOf=p=>`${p.id+1}号 ${p.name}`;
+
+/* 公开事件入档:同局内所有玩家的共同记忆,LLM 决策时逐日回放 */
+function record(text){
+  S.transcript.push({day:S.day,text});
+}
 
 /* ---------- 状态与渲染快照 ---------- */
 
@@ -26,6 +31,7 @@ function newGame(){
     witchHeal:true,witchPoison:true,
     saved:false,poisonTarget:null,knifeTarget:null,
     claims:[],wolfJumped:false,
+    transcript:[],
     justDied:new Set(),
     showVotes:null,spokenToday:new Set(),
     players:roles.map((role,i)=>({
@@ -86,7 +92,7 @@ async function nightPhase(){
       view.clearActions();
       view.log(`你们把獠牙对准了 ${nameOf(t)}。`,"night");
     }else{
-      S.knifeTarget=AI.wolfChoose(S);
+      S.knifeTarget=await brain.wolfTarget(S);
       view.log("狼人睁开了眼睛,夜色中传来低语。","night");
     }
   }
@@ -106,7 +112,8 @@ async function nightPhase(){
       view.log(`【只有你知道】你查验了 ${nameOf(t)} —— ${res==="wolf"?"狼人!":"好人"}`,"gold");
       await view.sleep(800);
     }else{
-      AI.seerCheck(S,seer);
+      const t=await brain.seerTarget(S,seer);
+      if(t!=null)seer.checks[t]=byId(t).role===WOLF?"wolf":"good";
       view.log("预言家凝视着水晶,无人知晓他看到了什么。","night");
     }
   }else{
@@ -123,7 +130,9 @@ async function nightPhase(){
     if(witch.human){
       await humanWitch(witch);
     }else{
-      AI.witch(S,witch);
+      const act=await brain.witchAct(S,witch);
+      if(act.save){S.saved=true;S.witchHeal=false;}
+      if(act.poison!=null){S.poisonTarget=act.poison;S.witchPoison=false;}
       view.log("女巫掂量着手中的药瓶。","night");
     }
   }else{
@@ -174,12 +183,14 @@ async function dawnPhase(){
 
   if(!deaths.length){
     view.log(`第 ${S.day} 天清晨:昨夜是平安夜,无人死亡。`,"sys");
+    record("清晨公布:昨夜是平安夜,无人死亡。");
     await view.sleep(1200);
   }else{
     S.justDied=new Set(deaths.map(d=>d.id));
     for(const d of deaths){
       byId(d.id).alive=false;
       view.log(`${nameOf(d.id)} 被发现死在了家里。`,"death");
+      record(`清晨公布:${nameOf(d.id)} 死亡。`);
     }
     render();
     await view.sleep(1400);
@@ -211,12 +222,13 @@ async function hunterCheck(p,cause){
       killByShot(t);
     }else{
       view.log("猎人收起了枪,沉默地离场。","sys");
+      record("猎人的枪没有响。");
     }
   }else{
-    const t=AI.topSusp(S,p);
-    if(t){
+    const t=await brain.hunterTarget(S,p);
+    if(t!=null){
       await view.sleep(700);
-      killByShot(t.id);
+      killByShot(t);
     }
   }
 }
@@ -225,6 +237,7 @@ function killByShot(id){
   byId(id).alive=false;
   S.justDied=new Set([id]);
   view.log(`猎人的枪响了!子弹带走了 ${nameOf(id)}。`,"death");
+  record(`猎人开枪,${nameOf(id)} 被带走。`);
   render();
   setTimeout(()=>{S.justDied.clear();render();},1000);
 }
@@ -239,9 +252,14 @@ async function speechPhase(){
     if(p.human){
       await playerSpeech();
     }else{
-      const intent=AI.decide(S,p);
-      const line=await speech.generate(p,intent,{nameOf});
-      view.log(`${nameOf(p.id)}:${line}`,"speech");
+      const r=await brain.speech(S,p,{nameOf});
+      if(r.wolfJump)S.wolfJumped=true;
+      if(r.claim){
+        AI.applyClaim(S,{seer:p.id,target:r.claim.target,result:r.claim.result,
+          fake:p.role!==SEER});
+      }
+      view.log(`${nameOf(p.id)}:${r.line}`,"speech");
+      record(`${nameOf(p.id)}:${r.line}`);
       await view.sleep(1500);
     }
     S.spokenToday.add(p.id);
@@ -293,33 +311,40 @@ async function playerSpeech(){
 
   view.clearActions();
   view.log(`${nameOf(me.id)}:${line}`,"speech");
+  record(`${nameOf(me.id)}:${line}`);
   if(effect)effect();
 }
 
 async function votePhase(){
   view.setStage("投票放逐",`第 ${S.day} 天 · 得票最多者出局,平票则无人出局`,false);
   await view.sleep(600);
+  const voters=alive();
+  const humanVoter=voters.find(p=>p.human);
+
+  // 人类选票与 AI 选票并行发起(AI 走 LLM 时每票一次调用,并行可省大量等待)
+  const humanP=humanVoter
+    ?pickSeat(voters.filter(q=>q.id!==humanVoter.id),"投出一票")
+      .then(id=>{view.clearActions();return {id:humanVoter.id,t:id};})
+    :Promise.resolve(null);
+  const results=await Promise.all([
+    ...voters.filter(p=>!p.human).map(p=>brain.vote(S,p).then(t=>({id:p.id,t}))),
+    humanP,
+  ]);
+
   const votes=new Map();
-  for(const p of alive()){
-    let t;
-    if(p.human){
-      const cands=alive().filter(q=>q.id!==p.id);
-      t=await pickSeat(cands,"投出一票");
-      view.clearActions();
-    }else{
-      t=AI.vote(S,p);
-      await view.sleep(280);
-    }
-    if(t!=null){
-      if(!votes.has(t))votes.set(t,[]);
-      votes.get(t).push(p.id);
+  for(const r of results){
+    if(r&&r.t!=null){
+      if(!votes.has(r.t))votes.set(r.t,[]);
+      votes.get(r.t).push(r.id);
     }
   }
   const counts={};
-  for(const [t,voters]of votes){
-    counts[t]=voters.length;
-    view.log(`${nameOf(t)} ← ${voters.map(id=>id+1+"号").join("、")}`,"sys");
+  for(const [t,vs]of votes){
+    counts[t]=vs.length;
+    view.log(`${nameOf(t)} ← ${vs.map(id=>id+1+"号").join("、")}`,"sys");
   }
+  if(votes.size)record("投票结果:"
+    +[...votes.entries()].map(([t,vs])=>`${t+1}号 ← ${vs.map(id=>id+1+"号").join("、")}`).join("、"));
   S.showVotes=counts;
   render();
   await view.sleep(1800);
@@ -333,12 +358,14 @@ async function votePhase(){
   }
   if(maxTarget==null||tie){
     view.log("平票——今天没有人被放逐,村庄在争执中入夜。","sys");
+    record("投票平票,无人被放逐。");
     return;
   }
   const exiled=byId(maxTarget);
   exiled.alive=false;
   S.justDied=new Set([maxTarget]);
   view.log(`${nameOf(maxTarget)} 被村民投票放逐,离开了村庄。`,"death");
+  record(`${nameOf(maxTarget)} 被投票放逐。`);
   render();
   await view.sleep(1300);
   S.justDied.clear();
@@ -381,6 +408,7 @@ async function endGame(){
     goodWin?"所有狼人出局":"狼人不再需要伪装",goodWin);
   view.setIndicator("对局结束");
   view.log(goodWin?"所有狼人出局——好人胜利!":"狼人屠城——狼人胜利!",goodWin?"gold":"death");
+  record(goodWin?"所有狼人出局,好人胜利。":"狼人屠城,狼人胜利。");
   const r=await view.openEndModal({
     goodWin,
     story:goodWin
@@ -428,6 +456,9 @@ async function runGame(){
 function startGame(){
   newGame();
   view.setIndicator("第 1 天 · 夜晚");
+  view.log(LLM.ready()
+    ?`本局 AI 由大模型驱动(${LLM.config.model}),它们记得本局每一天的发言与投票。`
+    :"本局为内置规则 AI——点右上「AI 设置」接入大模型后,AI 将自己推理。","sys");
   runGame();
 }
 

@@ -60,35 +60,37 @@ const AI={
     return pick(cands).id;
   },
 
-  seerCheck(S,seer){
+  /* 预言家夜里验谁:怀疑值最高的未验者(纯决策,返回 id;由引擎写入 checks) */
+  seerPick(S,seer){
     const cands=S.players.filter(p=>p.alive&&p.id!==seer.id&&!(p.id in seer.checks));
-    if(!cands.length)return;
+    if(!cands.length)return null;
     let best=null,bestScore=-Infinity;
     for(const c of cands){
       const score=seer.susp[c.id]+Math.random()*2;
       if(score>bestScore){bestScore=score;best=c;}
     }
-    seer.checks[best.id]=best.role===WOLF?"wolf":"good";
+    return best.id;
   },
 
-  witch(S,witch){
+  /* 女巫用药决策(纯函数,返回意图;由引擎应用) */
+  witchAct(S,witch){
     const t=S.knifeTarget;
+    let save=false,poison=null;
     if(S.witchHeal&&t!=null&&t!==witch.id){
       const isClaimant=S.claims.some(c=>c.seer===t);
       const pSave=S.day===1?0.85:(isClaimant?0.65:0.22);
-      if(Math.random()<pSave){S.saved=true;S.witchHeal=false;}
+      if(Math.random()<pSave)save=true;
     }
     if(S.witchPoison&&S.day>=2){
       let best=null,bestScore=0;
       for(const p of S.players){
         if(!p.alive)continue;
-        if(p.id===witch.id||p.id===t&&S.saved)continue;
+        if(p.id===witch.id||(p.id===t&&save))continue;
         if(witch.susp[p.id]>bestScore){bestScore=witch.susp[p.id];best=p;}
       }
-      if(best&&bestScore>=7&&Math.random()<0.55){
-        S.poisonTarget=best.id;S.witchPoison=false;
-      }
+      if(best&&bestScore>=7&&Math.random()<0.55)poison=best.id;
     }
+    return {save,poison};
   },
 
   /* 怀疑值最高的存活玩家(排除自己) */
@@ -132,7 +134,7 @@ const AI={
     return t?t.id:pick(others).id;
   },
 
-  /* 发言决策:返回意图(带副作用——报查杀会写入 claims,悍跳会置位)
+  /* 发言决策:返回意图(纯函数,副作用由引擎应用)
      intent 类型: claim / counterClaim / pickBetween / follow / accuse / generic */
   decide(S,p){
     const alive=id=>S.players[id].alive;
@@ -144,16 +146,14 @@ const AI={
       if(entries.length){
         const [tid,res]=entries[entries.length-1];
         const result=res==="wolf"?"sha":"water";
-        this.applyClaim(S,{seer:p.id,target:+tid,result,fake:false});
-        return {type:"claim",target:+tid,result};
+        return {type:"claim",target:+tid,result,claim:{target:+tid,result}};
       }
     }
     if(p.role===WOLF&&!S.wolfJumped){
       const exposed=S.claims.find(c=>c.target===p.id&&c.result==="sha"&&!c.fake);
       if(exposed){
-        S.wolfJumped=true;
-        this.applyClaim(S,{seer:p.id,target:exposed.seer,result:"sha",fake:true});
-        return {type:"counterClaim",target:exposed.seer};
+        return {type:"counterClaim",target:exposed.seer,
+          claim:{target:exposed.seer,result:"sha"},wolfJump:true};
       }
     }
     if(claimants.length>=2){
