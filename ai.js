@@ -16,7 +16,6 @@ const ROLE_DESC={
 };
 const ROLE_CLASS={wolf:"wolf",seer:"god",witch:"god",hunter:"god",villager:"plain"};
 const ROLE_TINT={wolf:"wolf",seer:"god",witch:"god",hunter:"god",villager:""};
-const AI_NAMES=["老猎户","王寡妇","教书先生","张屠户","陈货郎","李铁匠","阿花","三叔公"];
 
 function shuffle(arr){
   const a=arr.slice();
@@ -187,13 +186,13 @@ const AI={
 
 /* ============================================================
    SpeechProvider 接口:generate(player, intent, ctx) → Promise<string>
-   ctx: {nameOf(id)→string} —— 引擎注入的名字函数
+   ctx: {seatOf(id)→string} —— 引擎注入的座位号函数(逻辑层不含玩家昵称)
    将来接入 LLM 时新增实现类即可,engine 无感切换
    ============================================================ */
 
 class TemplateSpeech{
   async generate(p,intent,ctx){
-    const n=ctx.nameOf;
+    const n=ctx.seatOf;
     switch(intent.type){
       case "claim":
         return intent.result==="sha"

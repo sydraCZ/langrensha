@@ -9,6 +9,7 @@ const LLM={
   STORAGE_KEY:"ww_llm_config",
   _loaded:false,
   config:null,
+  lastChars:0, /* 最近一次请求的字符数,用于观察压缩效果 */
 
   load(){
     this._loaded=true;
@@ -34,6 +35,7 @@ const LLM={
   async chat(system,user,opts){
     const cfg=this.config;
     if(!cfg)throw new Error("未配置 LLM");
+    this.lastChars=String(system).length+String(user).length;
     const o=Object.assign({timeout:45000,temperature:0.8,maxTokens:400},opts);
     const ctrl=new AbortController();
     const timer=setTimeout(()=>ctrl.abort(),o.timeout);
@@ -73,47 +75,95 @@ const LLM={
 /* ---------- 提示词构建 ---------- */
 
 function llmSeatName(p){
-  return p.human?`${p.id+1}号(人类玩家)`:`${p.id+1}号 ${p.name}`;
+  return p.human?`#${p.id+1}(人类玩家)`:`#${p.id+1}`;
 }
 
-function llmTranscript(S){
+/* 发言记录前缀 "3号:" → "#3:"(座位号即唯一标识,记录里没有昵称)。
+   注意:必须用「只匹配前缀 + 冒号前瞻」,否则贪婪匹配会把冒号后的发言内容整个吞掉,只剩 "#3"。 */
+function llmClean(text){
+  return text
+    .replace(/^(\d+)号(?=:)/,"#$1")
+    .replace(/^清晨公布:(\d+)号(?= )/,"清晨公布:#$1");
+}
+
+/* 把发言记录压成一行要点(保留"查杀/金水/怀疑/投X"等判断骨架,去掉套话) */
+function llmSpeechDigest(list,maxLen){
+  const raw=list.map(e=>e.text).join(" | ");
+  const noise=/^(我是好人|先过|我先过|我先听听大家的|我先听大家的|没什么想说的|随大流|没意见|先听|无)[,.。！! ]*/g;
+  const kept=raw.replace(noise,"").replace(/\s{2,}/g," ").replace(/\s\|\s/g,"|");
+  if(!kept)return "";
+  return kept.length<=maxLen?kept:kept.slice(0,maxLen)+"…";
+}
+
+/* 压缩版记忆:最近一天(当前任务发生的那一轮)发言保留原文;更早的天整块压缩 */
+function llmCompact(S,fullDay){
   if(!S.transcript||!S.transcript.length)return "(对局刚开始,还没有公开事件)";
-  const byDay=new Map();
+  const days={};
   for(const e of S.transcript){
-    if(!byDay.has(e.day))byDay.set(e.day,[]);
-    byDay.get(e.day).push(e.text);
+    const d=days[e.day]||(days[e.day]={speech:[],rest:[]});
+    (e.kind==="speech"?d.speech:d.rest).push(e);
   }
-  return [...byDay.entries()]
-    .map(([d,lines])=>`【第${d}天】\n`+lines.map(l=>"- "+l).join("\n"))
-    .join("\n");
+  const out=[];
+  const nums=Object.keys(days).map(Number).sort((a,b)=>a-b);
+  for(const d of nums){
+    const day=days[d];
+    const L=`【第${d}天】 `;
+    if(d===fullDay){
+      out.push(L+day.rest.map(e=>llmClean(e.text)).join(" / ")
+        +(day.speech.length?" | "+day.speech.map(e=>llmClean(e.text)).join(" | "):""));
+    }else{
+      const parts=day.rest.map(e=>llmClean(e.text));
+      const dig=llmSpeechDigest(day.speech.map(e=>llmClean(e.text)),72);
+      if(dig)parts.push("发言要点:"+dig);
+      out.push(L+parts.join(" / ")+"。");
+    }
+  }
+  return out.join("\n");
+}
+
+function llmTranscript(S,fullDay){
+  return llmCompact(S,fullDay);
 }
 
 function llmSystem(S,p){
   let priv="";
   if(p.role===WOLF){
     const mates=S.players.filter(q=>q.role===WOLF&&q.id!==p.id);
-    priv="你的狼队友:"+mates.map(q=>`${q.id+1}号${q.human?"(人类玩家)":" "+q.name}${q.alive?"(存活)":"(已出局)"}`).join("、")
+    priv="你的狼队友:"+mates.map(q=>`#${q.id+1}${q.alive?"":"(已出局)"}`).join("、")
       +"。狼人夜里共同决定袭击目标,白天必须隐藏身份、伪装好人。\n";
   }else if(p.role===SEER){
     const ks=Object.keys(p.checks);
     priv=ks.length
-      ?"你的查验记录:"+ks.map(t=>`${+t+1}号=${p.checks[t]==="wolf"?"狼人":"好人"}`).join("、")+"\n"
+      ?"你的查验记录:"+ks.map(t=>`#${+t+1}=${p.checks[t]==="wolf"?"狼":"好"}`).join("、")+"\n"
       :"你还没有查验过任何人。\n";
   }else if(p.role===WITCH){
     priv=`你的解药${S.witchHeal?"未使用(可用)":"已用完"},毒药${S.witchPoison?"未使用(可用)":"已用完"}。解药不能救自己。\n`;
   }
   const seats=S.players
-    .map(q=>`${q.id+1}号${q.human?"(人类玩家)":" "+q.name}${q.alive?"(存活)":"(出局)"}`)
+    .map(q=>`#${q.id+1}${q.alive?"":"(已出局)"}`)
     .join("、");
-  return "你在玩一局狼人杀(9人标准局:3狼人、3村民、预言家、女巫、猎人)。\n"
+  return "你在玩狼人杀(9人局:3狼、3民、预言家、女巫、猎人)。\n"
     +`你扮演 ${llmSeatName(p)},身份是【${ROLE_NAME[p.role]}】。\n${priv}`
     +`座位表:${seats}\n`
-    +"规则:白天按座位号轮流发言后投票放逐,得票最多者出局,平票无人出局;夜里狼人袭击、预言家查验、女巫可用药。猎人被袭击或被放逐时可开枪带走一人,被毒杀则不能开枪。狼人全部出局则好人胜;狼人数不少于好人数则狼人胜。\n"
-    +"要求:完全代入角色,像真人一样只依据对局记录与你的私有信息推理、发言、投票——狼人要伪装撒谎,好人要找狼。你的回答必须是合法 JSON,除 JSON 外不要输出任何内容。";
+    +"规则:白天轮流发言后投票放逐,得票最多者出局,平票无人出局;夜里狼人袭击、预言家查验、女巫用药。猎人被袭击或被放逐可开枪带走一人,被毒杀不能开枪。狼全灭则好人胜,狼人数不少于好人则狼人胜。\n"
+    +"本局记忆已压缩:最近一天为原文,更早的天为摘要(发言可能被截断,以「|」分隔)。\n"
+    +"要求:完全代入角色,只依据记忆与你的私有信息推理——狼要伪装撒谎,好人要找狼。回答必须是合法 JSON,除 JSON 外不要输出任何内容。";
+}
+
+function llmSituation(S){
+  const alive=S.players.filter(p=>p.alive).map(p=>`#${p.id+1}`).join("、");
+  const dead=S.players.filter(p=>!p.alive).map(p=>`#${p.id+1}`).join("、")||"无";
+  const todaySpoken=S.spokenToday?Array.from(S.spokenToday).sort((a,b)=>a-b)
+    .map(id=>`#${id+1}`).join("、")||"无":null;
+  return `【当前局势】 存活:${alive} | 已出局:${dead}`
+    +(todaySpoken?` | 今日已发言:${todaySpoken}`:"")
+    +(S.justDied&&S.justDied.size?` | 今晨死亡:${Array.from(S.justDied).sort((a,b)=>a-b).map(id=>`#${id+1}`).join("、")}`:"");
 }
 
 function llmUser(S,task){
-  return `===对局记录===\n${llmTranscript(S)}\n\n===当前任务===\n${task}`;
+  return "===本局对局记忆(已压缩)===\n"+llmTranscript(S,S.day)
+    +"\n\n===当前局势===\n"+llmSituation(S)
+    +"\n\n===当前任务===\n"+task;
 }
 
 /* ---------- HybridBrain:统一决策入口 ----------
@@ -141,8 +191,7 @@ class HybridBrain{
     if(LLM.ready()){
       try{
         const j=await this._ask(S,p,
-          "现在轮到你发言。结合对局记录(包括今天在你之前每个人的发言)给出你的发言,中文口语,像真人,1~3句。"
-          +'输出 {"line":"你的发言","claim":null};只有当你想跳预言家(真跳或悍跳)时才把 claim 填成 {"target":座位号,"result":"sha"或"water"},其余情况必须是 null。');
+          "轮到你发言。结合今日已发言的人给出1~3句中文口语发言(像真人)。输出 {\"line\":\"…\",\"claim\":null};跳预言家时才把 claim 填成 {\"target\":座位号,\"result\":\"sha\"或\"water\"},否则 null。");
         const line=typeof j.line==="string"?j.line.trim().slice(0,300):"";
         if(line){
           let claim=null;
@@ -164,7 +213,7 @@ class HybridBrain{
     if(LLM.ready()){
       try{
         const j=await this._ask(S,p,
-          '现在全场投票放逐。选出你认为最该出局的人(不能投自己,必须是存活玩家)。输出 {"target":座位号}。');
+          '现在全场投票放逐。候选是「除你自己外、当前存活的全部玩家」。选出你认为最该出局的人(不能投自己,必须是存活玩家)。输出 {"target":座位号}。');
         const id=this._seatId(S,j.target,{exclude:p.id});
         if(id!=null)return id;
       }catch(e){console.warn("LLM 投票回退:",e.message);}
@@ -205,7 +254,7 @@ class HybridBrain{
     if(LLM.ready()){
       try{
         const knifed=S.knifeTarget!=null
-          ?`今晚 ${S.knifeTarget+1}号 被狼人袭击`
+          ?`今晚 #${S.knifeTarget+1} 被狼人袭击`
           :"今晚没有人被袭击";
         let task=`天黑了,女巫行动。${knifed}。\n`
           +'输出 {"save":true或false,"poison":座位号或null}。'

@@ -20,6 +20,21 @@ const POS=Array.from({length:9},(_,i)=>{
   return {x:50+39.5*Math.cos(a),y:50+39.5*Math.sin(a)};
 });
 
+/* ---------- 玩家昵称配置(纯 UI 展示,可随意增删改名) ----------
+   游戏逻辑、对局记录与 LLM 提示词只使用座位号,完全不读取本数组;
+   这里的人名仅用于座位牌和终局名单的显示。
+   按座位顺序分配给 8 名 AI(跳过人类所在的座位)。 */
+const SEAT_NICKS=["老猎户","王寡妇","教书先生","张屠户","陈货郎","李铁匠","阿花","三叔公"];
+
+/* snapshot.players 恒按座位号升序 → 跳过人类座位,依次取昵称 */
+function seatNickMap(snap){
+  const m={};let ai=0;
+  for(const p of (snap&&snap.players)||[]){
+    m[p.id]=p.isHuman?"你":(SEAT_NICKS[ai++]||"村民");
+  }
+  return m;
+}
+
 /* ---------- 通用模态 ---------- */
 
 function openModal(build){
@@ -67,7 +82,7 @@ const view={
     el.indicator.textContent=text;
   },
 
-  /* snapshot: {players:[{id,name,alive,roleText,roleClass,votes,justDied}]} */
+  /* snapshot: {players:[{id,alive,isHuman,roleText,roleClass,votes,justDied}]} */
   render(snap){
     this._snap=snap;
     this._redraw();
@@ -76,6 +91,7 @@ const view={
   _redraw(){
     el.square.querySelectorAll(".seat").forEach(n=>n.remove());
     if(!this._snap)return;
+    const nick=seatNickMap(this._snap);
     for(const p of this._snap.players){
       const b=document.createElement("button");
       b.type="button";
@@ -97,7 +113,7 @@ const view={
       const num=document.createElement("div");
       num.className="seat-num";num.textContent=String(p.id+1);
       const nm=document.createElement("div");
-      nm.className="seat-name";nm.textContent=p.name;
+      nm.className="seat-name";nm.textContent=nick[p.id];
       b.append(num,nm);
       if(p.roleText){
         const r=document.createElement("div");
@@ -237,7 +253,7 @@ const view={
     });
   },
 
-  /* data: {goodWin, story, revealList:[{who,role,cls}]} → 'again' | 'stay' */
+  /* data: {goodWin, story, revealList:[{id,alive,role,cls}]} → 'again' | 'stay' */
   openEndModal(data){
     return openModal((m,close)=>{
       const h=document.createElement("h2");
@@ -247,10 +263,12 @@ const view={
       line.className="win-line";line.textContent=data.story;
       const grid=document.createElement("div");
       grid.className="reveal-grid";
+      const nick=seatNickMap(this._snap);
       for(const rv of data.revealList){
         const d=document.createElement("div");
         d.className="rv "+(rv.cls||"");
-        const who=document.createElement("span");who.textContent=rv.who;
+        const who=document.createElement("span");
+        who.textContent=nick[rv.id]+(rv.alive?"":"(出局)");
         const role=document.createElement("span");role.textContent=rv.role;
         d.append(who,role);
         grid.appendChild(d);

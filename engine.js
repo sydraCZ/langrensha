@@ -10,12 +10,13 @@ const brain=new HybridBrain();
 const alive=()=>S.players.filter(p=>p.alive);
 const aliveWolves=()=>alive().filter(p=>p.role===WOLF);
 const byId=id=>S.players[id];
-const nameOf=id=>`${id+1}号 ${S.players[id].name}`;
-const labelOf=p=>`${p.id+1}号 ${p.name}`;
+/* 座位号是唯一标识;玩家昵称属于 UI 展示配置(ui.js),逻辑层不感知 */
+const seatOf=id=>`${id+1}号`;
 
-/* 公开事件入档:同局内所有玩家的共同记忆,LLM 决策时逐日回放 */
-function record(text){
-  S.transcript.push({day:S.day,text});
+/* 公开事件入档:同局共同记忆。kind="speech" 的条目在更早的天会被压缩成要点,
+   其余(死亡/放逐/平票)逐字保留 */
+function record(text,kind){
+  S.transcript.push({day:S.day,text,kind:kind||"note"});
 }
 
 /* ---------- 状态与渲染快照 ---------- */
@@ -23,7 +24,6 @@ function record(text){
 function newGame(){
   const roles=shuffle([WOLF,WOLF,WOLF,VILLAGER,VILLAGER,VILLAGER,SEER,WITCH,HUNTER]);
   const humanIdx=Math.floor(Math.random()*9);
-  let nameIdx=0;
   S={
     day:0,over:false,win:null,
     humanId:humanIdx,
@@ -36,7 +36,6 @@ function newGame(){
     showVotes:null,spokenToday:new Set(),
     players:roles.map((role,i)=>({
       id:i,role,alive:true,human:i===humanIdx,
-      name:i===humanIdx?"你":AI_NAMES[nameIdx++],
       susp:Array.from({length:9},()=>0),
       checks:{},
     })),
@@ -59,7 +58,7 @@ function snapshot(){
     players:S.players.map(p=>{
       const role=visibleRole(p);
       return {
-        id:p.id,name:p.name,alive:p.alive,
+        id:p.id,alive:p.alive,isHuman:p.human,
         roleText:role?ROLE_NAME[role]:null,
         roleClass:role?(role===WOLF?"wolf":""):"",
         votes:S.showVotes&&S.showVotes[p.id]||0,
@@ -77,6 +76,7 @@ function pickSeat(cands,prompt){return view.pickSeat(cands.map(p=>p.id),prompt);
 async function nightPhase(){
   view.setIndicator(`第 ${S.day} 天 · 夜晚`);
   view.setStage("天黑请闭眼",`第 ${S.day} 夜`,true);
+  S.knifeTarget=null; /* 每晚清零,避免沿用上夜刀口 */
   await view.sleep(1100);
 
   // 狼人
@@ -90,7 +90,7 @@ async function nightPhase(){
       const t=await pickSeat(cands,"选择今晚的猎物");
       S.knifeTarget=t;
       view.clearActions();
-      view.log(`你们把獠牙对准了 ${nameOf(t)}。`,"night");
+      view.log(`你们把獠牙对准了 ${seatOf(t)}。`,"night");
     }else{
       S.knifeTarget=await brain.wolfTarget(S);
       view.log("狼人睁开了眼睛,夜色中传来低语。","night");
@@ -109,7 +109,7 @@ async function nightPhase(){
       view.clearActions();
       const res=byId(t).role===WOLF?"wolf":"good";
       seer.checks[t]=res;
-      view.log(`【只有你知道】你查验了 ${nameOf(t)} —— ${res==="wolf"?"狼人!":"好人"}`,"gold");
+      view.log(`【只有你知道】你查验了 ${seatOf(t)} —— ${res==="wolf"?"狼人!":"好人"}`,"gold");
       await view.sleep(800);
     }else{
       const t=await brain.seerTarget(S,seer);
@@ -146,12 +146,12 @@ async function humanWitch(witch){
   if(S.witchHeal&&t!=null){
     if(t!==witch.id){
       const save=await view.confirm(
-        `今晚 ${nameOf(t)} 被袭击了。要使用仅有的解药吗?`,
+        `今晚 ${seatOf(t)} 被袭击了。要使用仅有的解药吗?`,
         "用解药救人","见死不救"
       );
       if(save){
         S.saved=true;S.witchHeal=false;
-        view.log(`【只有你知道】你用解药救下了 ${nameOf(t)}。`,"gold");
+        view.log(`【只有你知道】你用解药救下了 ${seatOf(t)}。`,"gold");
       }
     }else{
       view.log("【只有你知道】今晚倒下的是你自己……解药救不了自己。","gold");
@@ -165,7 +165,7 @@ async function humanWitch(witch){
       const tgt=await pickSeat(cands,"选择毒杀对象");
       S.poisonTarget=tgt;S.witchPoison=false;
       view.clearActions();
-      view.log(`【只有你知道】你把毒药倒进了 ${nameOf(tgt)} 的水杯。`,"gold");
+      view.log(`【只有你知道】你把毒药倒进了 ${seatOf(tgt)} 的水杯。`,"gold");
     }
   }
 }
@@ -183,14 +183,14 @@ async function dawnPhase(){
 
   if(!deaths.length){
     view.log(`第 ${S.day} 天清晨:昨夜是平安夜,无人死亡。`,"sys");
-    record("清晨公布:昨夜是平安夜,无人死亡。");
+    record("清晨公布:昨夜是平安夜,无人死亡。","note");
     await view.sleep(1200);
   }else{
     S.justDied=new Set(deaths.map(d=>d.id));
     for(const d of deaths){
       byId(d.id).alive=false;
-      view.log(`${nameOf(d.id)} 被发现死在了家里。`,"death");
-      record(`清晨公布:${nameOf(d.id)} 死亡。`);
+      view.log(`${seatOf(d.id)} 被发现死在了家里。`,"death");
+      record(`清晨公布:${seatOf(d.id)} 死亡。`,"note");
     }
     render();
     await view.sleep(1400);
@@ -222,7 +222,7 @@ async function hunterCheck(p,cause){
       killByShot(t);
     }else{
       view.log("猎人收起了枪,沉默地离场。","sys");
-      record("猎人的枪没有响。");
+      record("猎人的枪没有响。","note");
     }
   }else{
     const t=await brain.hunterTarget(S,p);
@@ -236,8 +236,8 @@ async function hunterCheck(p,cause){
 function killByShot(id){
   byId(id).alive=false;
   S.justDied=new Set([id]);
-  view.log(`猎人的枪响了!子弹带走了 ${nameOf(id)}。`,"death");
-  record(`猎人开枪,${nameOf(id)} 被带走。`);
+  view.log(`猎人的枪响了!子弹带走了 ${seatOf(id)}。`,"death");
+  record(`猎人开枪,${seatOf(id)} 被带走。`,"note");
   render();
   setTimeout(()=>{S.justDied.clear();render();},1000);
 }
@@ -252,14 +252,14 @@ async function speechPhase(){
     if(p.human){
       await playerSpeech();
     }else{
-      const r=await brain.speech(S,p,{nameOf});
+      const r=await brain.speech(S,p,{seatOf});
       if(r.wolfJump)S.wolfJumped=true;
       if(r.claim){
         AI.applyClaim(S,{seer:p.id,target:r.claim.target,result:r.claim.result,
           fake:p.role!==SEER});
       }
-      view.log(`${nameOf(p.id)}:${r.line}`,"speech");
-      record(`${nameOf(p.id)}:${r.line}`);
+      view.log(`${seatOf(p.id)}:${r.line}`,"speech");
+      record(`${seatOf(p.id)}:${r.line}`,"speech");
       await view.sleep(1500);
     }
     S.spokenToday.add(p.id);
@@ -285,13 +285,13 @@ async function playerSpeech(){
   if(res.key==="accuse"){
     const cands=alive().filter(q=>q.id!==me.id);
     const t=await pickSeat(cands,"你怀疑谁");
-    line=`我怀疑${nameOf(t)},他的发言有问题。`;
+    line=`我怀疑${seatOf(t)},他的发言有问题。`;
     effect=()=>{for(const v of AI.villageAIs(S))v.susp[t]+=2;};
   }else if(res.key==="claim"){
     const {target,result}=res.claim;
     line=result==="sha"
-      ?`我是预言家!昨晚验了${nameOf(target)},是查杀!今天全票出他。`
-      :`我是预言家,昨晚验了${nameOf(target)},是金水,他可以放一放。`;
+      ?`我是预言家!昨晚验了${seatOf(target)},是查杀!今天全票出他。`
+      :`我是预言家,昨晚验了${seatOf(target)},是金水,他可以放一放。`;
     effect=()=>AI.applyClaim(S,{seer:me.id,target,result,fake:false});
   }else if(res.key==="jump"){
     const cands=alive().filter(q=>q.id!==me.id&&q.role!==WOLF);
@@ -300,7 +300,7 @@ async function playerSpeech(){
     }else{
       const t=await pickSeat(cands,"报一个假的查杀对象");
       S.wolfJumped=true;
-      line=`我是预言家!昨晚验了${nameOf(t)},是查杀!`;
+      line=`我是预言家!昨晚验了${seatOf(t)},是查杀!`;
       effect=()=>AI.applyClaim(S,{seer:me.id,target:t,result:"sha",fake:true});
     }
   }else if(res.key==="text"){
@@ -310,8 +310,8 @@ async function playerSpeech(){
   }
 
   view.clearActions();
-  view.log(`${nameOf(me.id)}:${line}`,"speech");
-  record(`${nameOf(me.id)}:${line}`);
+  view.log(`${seatOf(me.id)}:${line}`,"speech");
+  record(`${seatOf(me.id)}:${line}`,"speech");
   if(effect)effect();
 }
 
@@ -341,10 +341,8 @@ async function votePhase(){
   const counts={};
   for(const [t,vs]of votes){
     counts[t]=vs.length;
-    view.log(`${nameOf(t)} ← ${vs.map(id=>id+1+"号").join("、")}`,"sys");
+    view.log(`${seatOf(t)} ← ${vs.map(id=>id+1+"号").join("、")}`,"sys");
   }
-  if(votes.size)record("投票结果:"
-    +[...votes.entries()].map(([t,vs])=>`${t+1}号 ← ${vs.map(id=>id+1+"号").join("、")}`).join("、"));
   S.showVotes=counts;
   render();
   await view.sleep(1800);
@@ -356,16 +354,16 @@ async function votePhase(){
     if(n>maxCount){maxCount=n;maxTarget=+t;tie=false;}
     else if(n===maxCount)tie=true;
   }
+  if(maxTarget!=null&&!tie)record(`放逐${seatOf(maxTarget)}(${maxCount}票)`, "vote");
+  else if(votes.size)record("投票平票,无人被放逐。", "vote");
   if(maxTarget==null||tie){
     view.log("平票——今天没有人被放逐,村庄在争执中入夜。","sys");
-    record("投票平票,无人被放逐。");
     return;
   }
   const exiled=byId(maxTarget);
   exiled.alive=false;
   S.justDied=new Set([maxTarget]);
-  view.log(`${nameOf(maxTarget)} 被村民投票放逐,离开了村庄。`,"death");
-  record(`${nameOf(maxTarget)} 被投票放逐。`);
+  view.log(`${seatOf(maxTarget)} 被村民投票放逐,离开了村庄。`,"death");
   render();
   await view.sleep(1300);
   S.justDied.clear();
@@ -376,9 +374,9 @@ async function votePhase(){
     render();
   }else if(!exiled.human){
     view.log(pick([
-      `${nameOf(maxTarget)} 走前高喊:"我是冤枉的!"`,
-      `${nameOf(maxTarget)} 冷笑一声,一言不发地离开了。`,
-      `${nameOf(maxTarget)} 叹了口气:"你们会后悔的。"`,
+      `${seatOf(maxTarget)} 走前高喊:"我是冤枉的!"`,
+      `${seatOf(maxTarget)} 冷笑一声,一言不发地离开了。`,
+      `${seatOf(maxTarget)} 叹了口气:"你们会后悔的。"`,
     ]),"sys");
   }
   await hunterCheck(exiled,"exile");
@@ -408,14 +406,14 @@ async function endGame(){
     goodWin?"所有狼人出局":"狼人不再需要伪装",goodWin);
   view.setIndicator("对局结束");
   view.log(goodWin?"所有狼人出局——好人胜利!":"狼人屠城——狼人胜利!",goodWin?"gold":"death");
-  record(goodWin?"所有狼人出局,好人胜利。":"狼人屠城,狼人胜利。");
+  record(goodWin?"所有狼人出局,好人胜利。":"狼人屠城,狼人胜利。","note");
   const r=await view.openEndModal({
     goodWin,
     story:goodWin
       ?"最后一头狼倒下了。晨光爬上山脊,幸存的村民彼此搀扶着走出家门。"
       :"夜再也不会结束。狼人撕下伪装,空荡的村庄只剩下风声。",
     revealList:S.players.map(p=>({
-      who:`${p.id+1}号 ${p.name}${p.alive?"":"(出局)"}`,
+      id:p.id,alive:p.alive,
       role:ROLE_NAME[p.role],
       cls:ROLE_TINT[p.role],
     })),
@@ -438,7 +436,7 @@ async function runGame(){
       ?"没有技能,但你的耳朵和推理就是武器。听发言、看投票,把狼人找出来。"
       :ROLE_DESC[me.role],
     matesText:me.role===WOLF
-      ?"你的同伴:"+S.players.filter(p=>p.role===WOLF&&!p.human).map(labelOf).join("、")
+      ?"你的同伴:"+S.players.filter(p=>p.role===WOLF&&!p.human).map(p=>seatOf(p.id)).join("、")
       :null,
   });
   while(!S.over){
