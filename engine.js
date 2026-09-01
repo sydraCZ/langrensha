@@ -118,6 +118,7 @@ async function nightPhase(){
     }
   }else{
     view.log("预言家的座位空着……水晶蒙上了灰。","night");
+    record("预言家已出局，今晚无人查验。","note");
   }
   await view.sleep(700);
 
@@ -137,6 +138,7 @@ async function nightPhase(){
     }
   }else{
     view.log("女巫的药已经用尽,夜风掠过空瓶。","night");
+    record("女巫的药已经用尽，今晚无法用药。","note");
   }
   await view.sleep(800);
 }
@@ -183,7 +185,7 @@ async function dawnPhase(){
 
   if(!deaths.length){
     view.log(`第 ${S.day} 天清晨:昨夜是平安夜,无人死亡。`,"sys");
-    record("清晨公布:昨夜是平安夜,无人死亡。","note");
+    record("清晨公布:昨夜是平安夜——女巫用了解药救下了一人,无人死亡。","note");
     await view.sleep(1200);
   }else{
     S.justDied=new Set(deaths.map(d=>d.id));
