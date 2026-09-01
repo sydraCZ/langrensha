@@ -125,29 +125,43 @@ function llmTranscript(S,fullDay){
   return llmCompact(S,fullDay);
 }
 
-function llmSystem(S,p){
+/* ---------- 静态系统提示词:每次调用完全相同,便于 prompt caching ----------
+   只含游戏总览 + 角色枚举 + 规则 + 输出格式,不含任何玩家私有信息 */
+function llmSystemStatic(){
+  return "你在玩一局 9 人标准狼人杀。本局只有这 5 种角色,没有其他角色,不要脑补不存在的角色:狼人×3、村民×3、预言家×1、女巫×1、猎人×1。明确没有守卫、白痴、骑士、猎人以外的枪手等。\n"
+    +"规则:\n"
+    +"- 夜晚:狼人共同选择袭击目标→预言家查验一名玩家阵营→女巫决定用解药或毒药(整局各限一次)。\n"
+    +"- 狼人夜里只能袭击非狼人阵营的存活玩家,不能选自己或狼队友。本局不存在「自刀」策略。\n"
+    +"- 女巫的解药不能救自己。\n"
+    +"- 白天:按座位号轮流发言,然后全员投票放逐。得票最多者出局;平票无人出局。\n"
+    +"- 猎人被袭击或被放逐时可开枪带走一名存活玩家;被毒杀则不能开枪。\n"
+    +"- 胜负:狼全部出局则好人胜;狼人数不少于好人数则狼人胜。\n"
+    +"游戏记忆格式:本局对局记忆已经压缩——最近一天为原文,更早的天为摘要(发言可能被截断,以「|」分隔)。座位用 #1~#9 表示,对局记录中的前缀如「#3:发言内容」中 #3 即 3 号玩家。\n"
+    +"行为要求:完全代入角色,只依据记忆与你的私有信息推理。狼人必须伪装撒谎,好人要找狼。回答必须是合法 JSON,除 JSON 外不要输出任何内容。";
+}
+
+/* ---------- 玩家上下文(动态):角色视角 + 私有信息 + 座位表 ----------
+   每次调用都不同,放在 user 消息中,不污染 system 静态规则 */
+function llmPlayerContext(S,p){
   let priv="";
   if(p.role===WOLF){
     const mates=S.players.filter(q=>q.role===WOLF&&q.id!==p.id);
     priv="你的狼队友:"+mates.map(q=>`#${q.id+1}${q.alive?"":"(已出局)"}`).join("、")
-      +"。狼人夜里共同决定袭击目标,白天必须隐藏身份、伪装好人。\n";
+      +"。狼人夜里共同决定袭击目标,白天必须隐藏身份、伪装好人。";
   }else if(p.role===SEER){
     const ks=Object.keys(p.checks);
     priv=ks.length
-      ?"你的查验记录:"+ks.map(t=>`#${+t+1}=${p.checks[t]==="wolf"?"狼":"好"}`).join("、")+"\n"
-      :"你还没有查验过任何人。\n";
+      ?"你的查验记录:"+ks.map(t=>`#${+t+1}=${p.checks[t]==="wolf"?"狼":"好"}`).join("、")
+      :"你还没有查验过任何人。";
   }else if(p.role===WITCH){
-    priv=`你的解药${S.witchHeal?"未使用(可用)":"已用完"},毒药${S.witchPoison?"未使用(可用)":"已用完"}。解药不能救自己。\n`;
+    priv=`你的解药${S.witchHeal?"未使用":"已用完"},毒药${S.witchPoison?"未使用":"已用完"}。解药不能救自己。`;
   }
   const seats=S.players
     .map(q=>`#${q.id+1}${q.alive?"":"(已出局)"}`)
     .join("、");
-  return "你在玩狼人杀(9人局:3狼、3民、预言家、女巫、猎人)。\n"
-    +`你扮演 ${llmSeatName(p)},身份是【${ROLE_NAME[p.role]}】。\n${priv}`
-    +`座位表:${seats}\n`
-    +"规则:白天轮流发言后投票放逐,得票最多者出局,平票无人出局;夜里狼人袭击、预言家查验、女巫用药。猎人被袭击或被放逐可开枪带走一人,被毒杀不能开枪。狼全灭则好人胜,狼人数不少于好人则狼人胜。\n"
-    +"本局记忆已压缩:最近一天为原文,更早的天为摘要(发言可能被截断,以「|」分隔)。\n"
-    +"要求:完全代入角色,只依据记忆与你的私有信息推理——狼要伪装撒谎,好人要找狼。回答必须是合法 JSON,除 JSON 外不要输出任何内容。";
+  return `你扮演 ${llmSeatName(p)},身份是【${ROLE_NAME[p.role]}】。\n`
+    +(priv?`私有信息:${priv}\n`:"")
+    +`座位表:${seats}`;
 }
 
 function llmSituation(S){
@@ -160,8 +174,9 @@ function llmSituation(S){
     +(S.justDied&&S.justDied.size?` | 今晨死亡:${Array.from(S.justDied).sort((a,b)=>a-b).map(id=>`#${id+1}`).join("、")}`:"");
 }
 
-function llmUser(S,task){
-  return "===本局对局记忆(已压缩)===\n"+llmTranscript(S,S.day)
+function llmUser(S,p,task){
+  return "===角色视角===\n"+llmPlayerContext(S,p)
+    +"\n\n===本局对局记忆(已压缩)===\n"+llmTranscript(S,S.day)
     +"\n\n===当前局势===\n"+llmSituation(S)
     +"\n\n===当前任务===\n"+task;
 }
@@ -183,7 +198,7 @@ class HybridBrain{
   }
 
   _ask(S,p,task,opts){
-    return LLM.chatJSON(llmSystem(S,p),llmUser(S,task),opts);
+    return LLM.chatJSON(llmSystemStatic(),llmUser(S,p,task),opts);
   }
 
   /* 发言 → {line, claim:{target,result}|null, wolfJump:boolean} */
@@ -227,7 +242,7 @@ class HybridBrain{
     if(wolf&&LLM.ready()){
       try{
         const j=await this._ask(S,wolf,
-          '天黑了,狼人行动。你们要选择今晚袭击谁(不能袭击狼队友,必须是存活的好人阵营玩家)。输出 {"target":座位号}。');
+          '天黑了,狼人行动。你们要选择今晚袭击谁(不能自刀,不能袭击狼队友,必须选存活的好人阵营玩家)。输出 {"target":座位号}。');
         const id=this._seatId(S,j.target,{exclude:wolf.id});
         if(id!=null&&S.players[id].role!==WOLF)return id;
       }catch(e){console.warn("LLM 刀口回退:",e.message);}
