@@ -51,11 +51,14 @@ const AI={
 
   /* 狼人夜里选刀口:优先咬跳出来的(非狼)预言家 */
   wolfChoose(S){
-    const cands=S.players.filter(p=>p.alive&&p.role!==WOLF);
-    const claimants=S.claims
-      .map(c=>c.seer)
-      .filter(id=>S.players[id].alive&&S.players[id].role!==WOLF);
-    if(claimants.length&&Math.random()<0.8)return pick(claimants);
+    const rules = RULES.ready();
+    const cands = rules.allowSelfKnife
+      ? S.players.filter(p => p.alive)
+      : S.players.filter(p => p.alive && p.role !== WOLF);
+    const claimants = S.claims
+      .map(c => c.seer)
+      .filter(id => S.players[id].alive && S.players[id].role !== WOLF);
+    if (claimants.length && Math.random() < 0.8) return pick(claimants);
     return pick(cands).id;
   },
 
@@ -75,7 +78,7 @@ const AI={
   witchAct(S,witch){
     const t=S.knifeTarget;
     let save=false,poison=null;
-    if(S.witchHeal&&t!=null&&t!==witch.id){
+    if (S.witchHeal && t != null && (t !== witch.id || ruleWitchCanSaveSelf())) {
       const isClaimant=S.claims.some(c=>c.seer===t);
       const pSave=S.day===1?0.85:(isClaimant?0.65:0.22);
       if(Math.random()<pSave)save=true;

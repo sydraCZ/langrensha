@@ -4,7 +4,7 @@
    只依赖 view 接口(ui.js)、AI 决策(ai.js)与 LLM 大脑(llm.js),不碰 DOM
    ============================================================ */
 
-let S=null;
+var S=null;
 const brain=new HybridBrain();
 
 const alive=()=>S.players.filter(p=>p.alive);
@@ -17,6 +17,46 @@ const seatOf=id=>`${id+1}号`;
    其余(死亡/放逐/平票)逐字保留 */
 function record(text,kind){
   S.transcript.push({day:S.day,text,kind:kind||"note"});
+}
+
+/* 复盘档案:上帝视角,记录所有事件(含私信)。与 transcript 分离,
+   transcript 是 LLM 记忆,journal 是人类复盘 */
+function journalAdd(entry){
+  S.journal.push({seq:S.journal.length+1,...entry});
+}
+
+function buildJournalText(){
+  const lines=[];
+  lines.push("===== 月夜狼人杀 · 复盘 =====\n");
+  lines.push("【开局 · 身份分配】");
+  for(const p of S.players)lines.push(`  ${seatOf(p.id)}: ${ROLE_NAME[p.role]}`);
+  lines.push("");
+  const days={};
+  for(const e of S.journal){
+    if(e.phase==="init"||e.phase==="end")continue;
+    const d=days[e.day]||(days[e.day]=[]);
+    d.push(e);
+  }
+  const dayNums=Object.keys(days).map(Number).sort((a,b)=>a-b);
+  const phaseLabel={night:"夜晚",dawn:"黎明",speech:"白天发言",vote:"投票放逐",api:"LLM 调用"};
+  for(const day of dayNums){
+    const events=days[day];
+    let lastPhase=null;
+    for(const e of events){
+      if(e.phase!==lastPhase){
+        lines.push(`【第 ${day} 天 · ${phaseLabel[e.phase]||e.phase}】`);
+        lastPhase=e.phase;
+      }
+      lines.push(`  ${e.text}`);
+    }
+    lines.push("");
+  }
+  const ends=S.journal.filter(e=>e.phase==="end");
+  if(ends.length){
+    lines.push("【终局】");
+    for(const e of ends)lines.push(`  ${e.text}`);
+  }
+  return lines.join("\n");
 }
 
 /* ---------- 状态与渲染快照 ---------- */
@@ -40,6 +80,9 @@ function newGame(){
       checks:{},
     })),
   };
+  S.journal=[];
+  const roleLines=S.players.map(p=>`${seatOf(p.id)}: ${ROLE_NAME[p.role]}`).join("\n  ");
+  journalAdd({day:0,phase:"init",type:"roles",text:`身份分配:\n  ${roleLines}`});
   view.clearLog();
   render();
 }
@@ -86,8 +129,8 @@ async function nightPhase(){
   if(wolves.length){
     const humanWolf=wolves.find(p=>p.human);
     if(humanWolf){
-      const cands=alive().filter(p=>p.role!==WOLF);
-      const t=await pickSeat(cands,"选择今晚的猎物");
+      const candsList = alive().filter(p => ruleWolfCanTarget(humanWolf.id)(p.id));
+      const t = await pickSeat(candsList, "选择今晚的猎物");
       S.knifeTarget=t;
       view.clearActions();
       view.log(`你们把獠牙对准了 ${seatOf(t)}。`,"night");
@@ -95,6 +138,10 @@ async function nightPhase(){
       S.knifeTarget=await brain.wolfTarget(S);
       view.log("狼人睁开了眼睛,夜色中传来低语。","night");
     }
+  }
+  if(S.knifeTarget!=null){
+    journalAdd({day:S.day,phase:"night",type:"wolf_knife",
+      text:`🐺 狼人选择袭击 ${seatOf(S.knifeTarget)}`});
   }
   await view.sleep(700);
 
@@ -110,15 +157,23 @@ async function nightPhase(){
       const res=byId(t).role===WOLF?"wolf":"good";
       seer.checks[t]=res;
       view.log(`【只有你知道】你查验了 ${seatOf(t)} —— ${res==="wolf"?"狼人!":"好人"}`,"gold");
+      journalAdd({day:S.day,phase:"night",type:"seer_check",
+        text:`🔮 预言家(${seatOf(seer.id)}) 查验 ${seatOf(t)} → ${res==="wolf"?"狼人":"好人"}`});
       await view.sleep(800);
     }else{
       const t=await brain.seerTarget(S,seer);
-      if(t!=null)seer.checks[t]=byId(t).role===WOLF?"wolf":"good";
+      if(t!=null){
+        seer.checks[t]=byId(t).role===WOLF?"wolf":"good";
+        journalAdd({day:S.day,phase:"night",type:"seer_check",
+          text:`🔮 预言家(${seatOf(seer.id)}) 查验 ${seatOf(t)} → ${byId(t).role===WOLF?"狼人":"好人"}`});
+      }
       view.log("预言家凝视着水晶,无人知晓他看到了什么。","night");
     }
   }else{
     view.log("预言家的座位空着……水晶蒙上了灰。","night");
     record("预言家已出局，今晚无人查验。","note");
+    journalAdd({day:S.day,phase:"night",type:"seer_check",
+      text:"🔮 预言家已出局，今晚无人查验。"});
   }
   await view.sleep(700);
 
@@ -132,31 +187,47 @@ async function nightPhase(){
       await humanWitch(witch);
     }else{
       const act=await brain.witchAct(S,witch);
-      if(act.save){S.saved=true;S.witchHeal=false;}
-      if(act.poison!=null){S.poisonTarget=act.poison;S.witchPoison=false;}
+      if(act.save){S.saved=true;S.witchHeal=false;
+        journalAdd({day:S.day,phase:"night",type:"witch_save",
+          text:`🧪 女巫(${seatOf(witch.id)}) 使用解药救下 ${seatOf(S.knifeTarget)}`});
+      }
+      if(act.poison!=null){S.poisonTarget=act.poison;S.witchPoison=false;
+        journalAdd({day:S.day,phase:"night",type:"witch_poison",
+          text:`☠️ 女巫(${seatOf(witch.id)}) 毒杀 ${seatOf(act.poison)}`});
+      }
+      if(!act.save&&act.poison==null){
+        journalAdd({day:S.day,phase:"night",type:"witch_skip",
+          text:`🧪 女巫(${seatOf(witch.id)}) 今夜不用药`});
+      }
       view.log("女巫掂量着手中的药瓶。","night");
     }
   }else{
     view.log("女巫的药已经用尽,夜风掠过空瓶。","night");
     record("女巫的药已经用尽，今晚无法用药。","note");
+    journalAdd({day:S.day,phase:"night",type:"witch_empty",
+      text:`🧪 女巫(${seatOf(witch.id)}) 药已全部用完`});
   }
   await view.sleep(800);
 }
 
 async function humanWitch(witch){
   const t=S.knifeTarget;
-  if(S.witchHeal&&t!=null){
-    if(t!==witch.id){
-      const save=await view.confirm(
+  if (S.witchHeal && t != null) {
+    if (t !== witch.id || ruleWitchCanSaveSelf()) {
+      const save = await view.confirm(
         `今晚 ${seatOf(t)} 被袭击了。要使用仅有的解药吗?`,
-        "用解药救人","见死不救"
+        "用解药救人", "见死不救"
       );
-      if(save){
-        S.saved=true;S.witchHeal=false;
-        view.log(`【只有你知道】你用解药救下了 ${seatOf(t)}。`,"gold");
+      if (save) {
+        S.saved = true; S.witchHeal = false;
+        view.log(`【只有你知道】你用解药救下了 ${seatOf(t)}。`, "gold");
+        journalAdd({day: S.day, phase: "night", type: "witch_save",
+          text: `🧪 女巫(${seatOf(witch.id)}) 使用解药救下 ${seatOf(t)}`});
       }
-    }else{
-      view.log("【只有你知道】今晚倒下的是你自己……解药救不了自己。","gold");
+    } else {
+      view.log("【只有你知道】今晚倒下的是你自己……解药救不了自己。", "gold");
+      journalAdd({day: S.day, phase: "night", type: "witch_blocked",
+        text: `🧪 女巫(${seatOf(witch.id)}) 被袭击,解药不能救自己`});
       await view.sleep(900);
     }
   }
@@ -168,6 +239,8 @@ async function humanWitch(witch){
       S.poisonTarget=tgt;S.witchPoison=false;
       view.clearActions();
       view.log(`【只有你知道】你把毒药倒进了 ${seatOf(tgt)} 的水杯。`,"gold");
+      journalAdd({day:S.day,phase:"night",type:"witch_poison",
+        text:`☠️ 女巫(${seatOf(witch.id)}) 毒杀 ${seatOf(tgt)}`});
     }
   }
 }
@@ -186,6 +259,8 @@ async function dawnPhase(){
   if(!deaths.length){
     view.log(`第 ${S.day} 天清晨:昨夜是平安夜,无人死亡。`,"sys");
     record("清晨公布:昨夜是平安夜——女巫用了解药救下了一人,无人死亡。","note");
+    journalAdd({day:S.day,phase:"dawn",type:"peaceful_night",
+      text:"☀️ 平安夜——女巫用了解药,无人死亡"});
     await view.sleep(1200);
   }else{
     S.justDied=new Set(deaths.map(d=>d.id));
@@ -193,6 +268,8 @@ async function dawnPhase(){
       byId(d.id).alive=false;
       view.log(`${seatOf(d.id)} 被发现死在了家里。`,"death");
       record(`清晨公布:${seatOf(d.id)} 死亡。`,"note");
+      journalAdd({day:S.day,phase:"dawn",type:"death",
+        text:`💀 ${seatOf(d.id)}(${ROLE_NAME[byId(d.id).role]}) 死亡 [${d.cause==="knife"?"狼刀":"毒药"}]`});
     }
     render();
     await view.sleep(1400);
@@ -210,9 +287,9 @@ async function dawnPhase(){
 }
 
 async function hunterCheck(p,cause){
-  if(p.role!==HUNTER)return;
-  if(cause==="poison"){
-    if(p.human)view.log("【只有你知道】你被毒杀,猎枪从手中滑落——开不了枪。","gold");
+  if (p.role !== HUNTER) return;
+  if (cause === "poison" && !ruleHunterCanShootOnPoison()) {
+    if (p.human) view.log("【只有你知道】你被毒杀,猎枪从手中滑落——开不了枪。", "gold");
     return;
   }
   if(p.human){
@@ -225,12 +302,17 @@ async function hunterCheck(p,cause){
     }else{
       view.log("猎人收起了枪,沉默地离场。","sys");
       record("猎人的枪没有响。","note");
+      journalAdd({day:S.day,phase:"dawn",type:"hunter_skip",
+        text:`🔫 猎人(${seatOf(p.id)}) 放弃开枪`});
     }
   }else{
     const t=await brain.hunterTarget(S,p);
     if(t!=null){
       await view.sleep(700);
       killByShot(t);
+    }else{
+      journalAdd({day:S.day,phase:"dawn",type:"hunter_skip",
+        text:`🔫 猎人(${seatOf(p.id)}) 放弃开枪`});
     }
   }
 }
@@ -240,6 +322,8 @@ function killByShot(id){
   S.justDied=new Set([id]);
   view.log(`猎人的枪响了!子弹带走了 ${seatOf(id)}。`,"death");
   record(`猎人开枪,${seatOf(id)} 被带走。`,"note");
+  journalAdd({day:S.day,phase:"dawn",type:"hunter_shot",
+    text:`🔫 猎人开枪,${seatOf(id)}(${ROLE_NAME[byId(id).role]}) 被带走`});
   render();
   setTimeout(()=>{S.justDied.clear();render();},1000);
 }
@@ -262,6 +346,8 @@ async function speechPhase(){
       }
       view.log(`${seatOf(p.id)}:${r.line}`,"speech");
       record(`${seatOf(p.id)}:${r.line}`,"speech");
+      journalAdd({day:S.day,phase:"speech",type:"speech",
+        text:`💬 ${seatOf(p.id)}(${ROLE_NAME[p.role]}):${r.line}`});
       await view.sleep(1500);
     }
     S.spokenToday.add(p.id);
@@ -314,6 +400,8 @@ async function playerSpeech(){
   view.clearActions();
   view.log(`${seatOf(me.id)}:${line}`,"speech");
   record(`${seatOf(me.id)}:${line}`,"speech");
+  journalAdd({day:S.day,phase:"speech",type:"speech",
+    text:`💬 ${seatOf(me.id)}(${ROLE_NAME[me.role]}):${line}`});
   if(effect)effect();
 }
 
@@ -329,9 +417,26 @@ async function votePhase(){
       .then(id=>{view.clearActions();return {id:humanVoter.id,t:id};})
     :Promise.resolve(null);
   const results=await Promise.all([
-    ...voters.filter(p=>!p.human).map(p=>brain.vote(S,p).then(t=>({id:p.id,t}))),
+    ...voters.filter(p=>!p.human).map(p=>{
+      const ownSpeech=S.transcript
+        .filter(e=>e.day===S.day&&e.kind==="speech"&&e.text.startsWith(`${p.id+1}号:`))
+        .map(e=>e.text).join(" / ");
+      return brain.vote(S,p,ownSpeech||null).then(v=>({id:p.id,t:v.target,reason:v.reason||""}));
+    }),
     humanP,
   ]);
+
+  for(const r of results){
+    if(r&&r.t!=null){
+      const voter=byId(r.id);
+      const roleInfo=S.revealAll?`(${ROLE_NAME[voter.role]})`:"";
+      const disguiseNote = S.revealAll && voter.role===WOLF && r.reason
+        ? `【伪装】${r.reason}` : r.reason;
+      const reasonNote = r.reason ? ` — "${disguiseNote}"` : "";
+      journalAdd({day:S.day,phase:"vote",type:"vote",
+        text:`🗳️ ${seatOf(r.id)}${roleInfo} 投给 ${seatOf(r.t)}${reasonNote}`});
+    }
+  }
 
   const votes=new Map();
   for(const r of results){
@@ -360,12 +465,15 @@ async function votePhase(){
   else if(votes.size)record("投票平票,无人被放逐。", "vote");
   if(maxTarget==null||tie){
     view.log("平票——今天没有人被放逐,村庄在争执中入夜。","sys");
+    journalAdd({day:S.day,phase:"vote",type:"tie",text:"🗳️ 平票,无人被放逐"});
     return;
   }
   const exiled=byId(maxTarget);
   exiled.alive=false;
   S.justDied=new Set([maxTarget]);
   view.log(`${seatOf(maxTarget)} 被村民投票放逐,离开了村庄。`,"death");
+  journalAdd({day:S.day,phase:"vote",type:"exile",
+    text:`⚖️ ${seatOf(maxTarget)}(${ROLE_NAME[exiled.role]}) 被放逐(${maxCount}票)`});
   render();
   await view.sleep(1300);
   S.justDied.clear();
@@ -391,11 +499,17 @@ async function votePhase(){
 
 /* ---------- 胜负与终局 ---------- */
 
-function checkWin(){
-  const w=aliveWolves().length;
-  const g=alive().length-w;
-  if(w===0){S.over=true;S.win="good";return true;}
-  if(w>=g){S.over=true;S.win="wolf";return true;}
+function checkWin() {
+  const w = aliveWolves().length;
+  const g = alive().length - w;
+  if (w === 0) { S.over = true; S.win = "good"; return true; }
+  if (!ruleIsAllIn()) {
+    const godAlive = alive().filter(p => !p.role.includes("villager")).length;
+    const vilAlive = alive().filter(p => p.role === VILLAGER).length;
+    if (w >= godAlive || w >= vilAlive) { S.over = true; S.win = "wolf"; return true; }
+  } else if (w >= g) {
+    S.over = true; S.win = "wolf"; return true;
+  }
   return false;
 }
 
@@ -409,6 +523,11 @@ async function endGame(){
   view.setIndicator("对局结束");
   view.log(goodWin?"所有狼人出局——好人胜利!":"狼人屠城——狼人胜利!",goodWin?"gold":"death");
   record(goodWin?"所有狼人出局,好人胜利。":"狼人屠城,狼人胜利。","note");
+  journalAdd({day:S.day,phase:"end",type:"result",
+    text:`🏁 游戏结束 · ${goodWin?"好人胜利":"狼人胜利"} · 共 ${S.day} 天`});
+  const aliveList=S.players.filter(p=>p.alive).map(p=>`${seatOf(p.id)}(${ROLE_NAME[p.role]})`).join("、");
+  journalAdd({day:S.day,phase:"end",type:"survivors",
+    text:`幸存者: ${aliveList||"无"}`});
   const r=await view.openEndModal({
     goodWin,
     story:goodWin
@@ -419,8 +538,12 @@ async function endGame(){
       role:ROLE_NAME[p.role],
       cls:ROLE_TINT[p.role],
     })),
+    journalText:buildJournalText(),
   });
   if(r==="stay"){
+    view.setActions([{label:"再来一局",cls:"primary",onClick:()=>startGame()}],"对局已结束");
+  }else if(r==="replay"){
+    await view.openReplayModal(buildJournalText());
     view.setActions([{label:"再来一局",cls:"primary",onClick:()=>startGame()}],"对局已结束");
   }else{
     startGame();
@@ -462,4 +585,4 @@ function startGame(){
   runGame();
 }
 
-startGame();
+view.openLanding().then(()=>startGame());

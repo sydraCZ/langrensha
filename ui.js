@@ -49,6 +49,36 @@ function openModal(build){
   });
 }
 
+function saveToFolder(text){
+  return new Promise((resolve, reject)=>{
+    if(!window.showDirectoryPicker){
+      const date=new Date().toISOString().slice(0,10);
+      const blob=new Blob([text],{type:"text/plain;charset=utf-8"});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement("a");
+      a.href=url;a.download=`战局复盘_月夜狼人杀_${date}.txt`;
+      document.body.appendChild(a);a.click();document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      resolve("已下载，请手动移入「战局复盘」文件夹");
+      return;
+    }
+    showDirectoryPicker({mode:"readwrite",startIn:"documents",suggestedName:"战局复盘"})
+      .then(handle=>{
+        const date=new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
+        handle.getOrCreateFile(`月夜狼人杀_${date}.txt`,{create:true})
+          .then(fh=>fh.createWritable()
+            .then(w=>{w.write(text);w.close();})
+            .then(()=>resolve("已保存到「战局复盘」文件夹 ✓"))
+            .catch(reject))
+          .catch(reject);
+      })
+      .catch(e=>{
+        if(e.name==="AbortError")resolve("");
+        else reject(e);
+      });
+  });
+}
+
 /* ---------- view 接口 ---------- */
 
 const view={
@@ -253,7 +283,7 @@ const view={
     });
   },
 
-  /* data: {goodWin, story, revealList:[{id,alive,role,cls}]} → 'again' | 'stay' */
+  /* data: {goodWin, story, revealList:[{id,alive,role,cls}], journalText} → 'again' | 'stay' | 'replay' */
   openEndModal(data){
     return openModal((m,close)=>{
       const h=document.createElement("h2");
@@ -278,32 +308,178 @@ const view={
       const again=document.createElement("button");
       again.type="button";again.className="btn primary";again.textContent="再来一局";
       again.addEventListener("click",()=>close("again"));
+      const replay=document.createElement("button");
+      replay.type="button";replay.className="btn gold";replay.textContent="复盘";
+      replay.addEventListener("click",()=>close("replay"));
       const stay=document.createElement("button");
       stay.type="button";stay.className="btn";stay.textContent="查看战局";
       stay.addEventListener("click",()=>close("stay"));
-      row.append(again,stay);
+      row.append(again,replay,stay);
       m.append(h,line,grid,row);
+    });
+  },
+
+  openReplayModal(text){
+    return openModal((m,close)=>{
+      m.classList.add("modal-wide");
+      const h=document.createElement("h2");
+      h.textContent="复盘";
+      const info=document.createElement("p");
+      info.className="role-desc";
+      info.textContent="上帝视角完整记录。可复制到剪贴板、下载为 txt 文件，或直接保存到「战局复盘」文件夹。";
+      const body=document.createElement("div");
+      body.className="replay-body";
+      const pre=document.createElement("pre");
+      pre.className="replay-text";
+      pre.textContent=text;
+      body.appendChild(pre);
+      const row=document.createElement("div");
+      row.className="btn-row";
+      const dl=document.createElement("button");
+      dl.type="button";dl.className="btn gold";dl.textContent="下载 .txt";
+      dl.addEventListener("click",()=>{
+        const blob=new Blob([text],{type:"text/plain;charset=utf-8"});
+        const url=URL.createObjectURL(blob);
+        const a=document.createElement("a");
+        a.href=url;a.download=`月夜狼人杀_复盘_${new Date().toISOString().slice(0,10)}.txt`;
+        document.body.appendChild(a);a.click();document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      });
+      const copy=document.createElement("button");
+      copy.type="button";copy.className="btn";copy.textContent="复制全文";
+      copy.addEventListener("click",()=>{
+        navigator.clipboard.writeText(text).then(
+          ()=>{copy.textContent="已复制 ✓";setTimeout(()=>copy.textContent="复制全文",1500);},
+          ()=>{copy.textContent="复制失败";setTimeout(()=>copy.textContent="复制全文",1500);}
+        );
+      });
+      const back=document.createElement("button");
+      back.type="button";back.className="btn";back.textContent="返回";
+      back.addEventListener("click",()=>close());
+      const save=document.createElement("button");
+      save.type="button";save.className="btn primary";
+      save.textContent="保存到战局复盘";
+      save.addEventListener("click",()=>{
+        save.disabled=true;save.textContent="保存中…";
+        saveToFolder(text).then(msg=>{
+          if(msg)save.textContent=msg;
+          setTimeout(()=>{save.disabled=false;save.textContent="保存到战局复盘";},2000);
+        }).catch(e=>{
+          save.textContent="保存失败";
+          setTimeout(()=>{save.disabled=false;save.textContent="保存到战局复盘";},2000);
+        });
+      });
+      row.append(save,dl,copy,back);
+      m.append(h,info,body,row);
     });
   },
 
   openRulesModal(){
     return openModal((m,close)=>{
       const h=document.createElement("h2");h.textContent="对局规则";
+
+      const rules=RULES.ready();
+      const allowSelfKnife=rules.allowSelfKnife;
+      const witchCanSaveSelf=ruleWitchCanSaveSelf();
+      const hunterCanShoot=ruleHunterCanShootOnPoison();
+      const allIn=ruleIsAllIn();
+
       const body=document.createElement("div");
       body.className="rules-body";
-      body.innerHTML=
-        "<p><b>配置</b> 九人标准局:<span class='r-wolf'>狼人 ×3</span> · 村民 ×3 · 预言家 · 女巫 · 猎人。身份随机发放。</p>"+
-        "<p><b>夜晚</b> 狼人袭击 → 预言家查验 → 女巫决定是否用药。解药、毒药各限一次,<b>女巫不能自救</b>。</p>"+
-        "<p><b>白天</b> 公布死讯 → 按座位号轮流发言 → 投票放逐,得票最多者出局;<b>平票则无人出局</b>。</p>"+
-        "<p><b>猎人</b> 被袭击或被放逐时可开枪带走一人;<b>被毒杀则不能开枪</b>。</p>"+
-        "<p><b>胜负</b> 狼人全部出局,好人胜;狼人数<b>不少于</b>好人数,狼人胜。</p>"+
-        "<p>你出局后自动进入上帝视角,可以看到所有身份。</p>";
+
+      const makeRuleRow=(key,label,desc,invert)=>{
+        const r=RULES.ready();
+        const v=invert?!r[key]:r[key];
+        const row=document.createElement("div");
+        row.className="rule-row";
+        const lbl=document.createElement("span");
+        lbl.className="rule-label";
+        lbl.innerHTML=label+(desc?`<small>${desc}</small>`:"");
+        const toggle=document.createElement("span");
+        toggle.className="toggle"+(v?" on":"");
+        toggle.addEventListener("click",()=>{
+          r[key]=invert?!r[key]:!r[key];
+          toggle.classList.toggle("on");
+        });
+        row.append(lbl,toggle);
+        return row;
+      };
+
+      const sec=document.createElement("div");
+      sec.className="rules-section";
+      const secTitle=document.createElement("h4");
+      secTitle.className="rules-section-title";
+      secTitle.textContent="当前规则";
+      sec.appendChild(secTitle);
+
+      sec.appendChild(makeRuleRow("allowSelfKnife","狼人可自刀","狼人可袭击狼队友或自己",false));
+      sec.appendChild(makeRuleRow("witchCantSaveSelf","女巫可自救","解药可以救女巫自己",true));
+      sec.appendChild(makeRuleRow("hunterDeadByPoison","猎人被毒可开枪","被毒杀时猎枪仍可响",false));
+
+      const winRow=document.createElement("div");
+      winRow.className="rule-row";
+      const winLbl=document.createElement("span");
+      winLbl.className="rule-label";
+      winLbl.innerHTML="胜利条件<small>屠边 / 屠城</small>";
+      const winOpts=document.createElement("span");
+      winOpts.style.cssText="display:flex;gap:6px;flex:none";
+      const mk=Object.entries({split:"屠边",all_in:"屠城"});
+      for(const [k,txt] of mk){
+        const b=document.createElement("button");
+        b.type="button";
+        b.className="btn ghost"+(rules.winCondition===k?" gold":"");
+        b.textContent=txt;
+        b.style.cssText="padding:4px 12px;font-size:12px;";
+        b.addEventListener("click",()=>{
+          RULES.ready().winCondition=k;
+          winOpts.querySelectorAll("button").forEach(x=>x.classList.remove("gold"));
+          b.classList.add("gold");
+        });
+        winOpts.appendChild(b);
+      }
+      winRow.append(winLbl,winOpts);
+      sec.appendChild(winRow);
+
+      body.appendChild(sec);
+
+      const desc=document.createElement("div");
+      desc.className="rules-body";
+      desc.style.marginTop="12px";
+      desc.innerHTML=
+        "<p><b>配置</b> 九人标准局:狼人 ×3 · 村民 ×3 · 预言家 · 女巫 · 猎人。</p>"+
+        (allowSelfKnife
+          ?"<p><b>夜晚</b> 狼人可袭击任何存活玩家(含狼队友和自己)。</p>"
+          :"<p><b>夜晚</b> 狼人只能袭击非狼人的存活玩家,不能自刀。</p>")
+        +(witchCanSaveSelf
+          ?"<p><b>女巫</b> 解药可以救自己;毒药整局限用一次。</p>"
+          :"<p><b>女巫</b> 解药不能救自己;毒药整局限用一次。</p>")
+        +(hunterCanShoot
+          ?"<p><b>猎人</b> 被袭击、放逐或毒杀时都可开枪带走一人。</p>"
+          :"<p><b>猎人</b> 被袭击或放逐时可开枪;被毒杀则不能开枪。</p>")
+        +(allIn
+          ?"<p><b>胜负</b> 屠城:狼人全出局=好人胜;狼数≥好人数=狼人胜。</p>"
+          :"<p><b>胜负</b> 屠边:狼人全出局=好人胜;狼数≥神职或≥村民任一阵营=狼人胜。</p>");
+      body.appendChild(desc);
+
       const row=document.createElement("div");
       row.className="btn-row";
-      const ok=document.createElement("button");
-      ok.type="button";ok.className="btn";ok.textContent="知道了";
-      ok.addEventListener("click",()=>close());
-      row.appendChild(ok);m.append(h,body,row);
+      const mk2=(text,cls,fn)=>{
+        const b=document.createElement("button");
+        b.type="button";b.className="btn "+(cls||"");
+        b.textContent=text;
+        b.addEventListener("click",fn);
+        row.appendChild(b);
+      };
+      mk2("保存配置","primary",()=>{
+        RULES.save(RULES.ready());
+        close();
+      });
+      mk2("恢复默认","",()=>{
+        RULES.clear();
+        close();
+      });
+      mk2("关闭","",()=>{RULES.load();close();});
+      m.append(h,body,row);
     });
   },
 
@@ -342,6 +518,13 @@ const view={
       status.textContent=LLM.ready()?"已配置,当前生效模型:"+LLM.config.model:"";
       body.appendChild(status);
 
+      const apiLog=document.createElement("label");
+      apiLog.style.cssText="display:flex;align-items:center;gap:6px;margin-top:8px;font-family:var(--sans);font-size:13px;color:var(--moon);cursor:pointer";
+      const apiCb=document.createElement("input");
+      apiCb.type="checkbox";apiCb.checked=!!(cur.recordApi||false);
+      apiLog.append(apiCb,document.createTextNode("记录 LLM 原始调用到复盘文件(调试用,文件较大)"));
+      body.appendChild(apiLog);
+
       const row=document.createElement("div");
       row.className="btn-row";
       const mk=(text,cls,fn)=>{
@@ -354,7 +537,8 @@ const view={
       mk("测试连接","",async btn=>{
         status.textContent="测试中……";
         LLM.config={baseUrl:inputs.baseUrl.value.trim(),
-          apiKey:inputs.apiKey.value.trim(),model:inputs.model.value.trim()};
+          apiKey:inputs.apiKey.value.trim(),model:inputs.model.value.trim(),
+          recordApi:apiCb.checked};
         try{
           await LLM.chat("你是一个连通性测试。","请只回复:OK",{maxTokens:10,timeout:15000});
           status.textContent="连接成功 ✓";
@@ -365,7 +549,8 @@ const view={
       });
       mk("保存","primary",()=>{
         const cfg={baseUrl:inputs.baseUrl.value.trim(),
-          apiKey:inputs.apiKey.value.trim(),model:inputs.model.value.trim()};
+          apiKey:inputs.apiKey.value.trim(),model:inputs.model.value.trim(),
+          recordApi:apiCb.checked};
         if(cfg.baseUrl&&cfg.apiKey&&cfg.model){
           LLM.save(cfg);
           close();
@@ -377,9 +562,59 @@ const view={
         LLM.clear();
         status.textContent="已清除,恢复内置规则 AI。";
         for(const k in inputs)inputs[k].value="";
+        apiCb.checked=false;
       });
       mk("关闭","",()=>{LLM.load();close();});
       m.append(h,body,row);
+    });
+  },
+
+  /* 开局着陆页:展示当前规则与 AI 状态,可先修改再开始 */
+  openLanding(){
+    return new Promise(res=>{
+      const ov=document.createElement("div");
+      ov.className="overlay";
+      const m=document.createElement("div");
+      m.className="modal landing";
+      const h=document.createElement("h2");
+      h.className="landing-title";h.textContent="月夜狼人杀";
+      const sub=document.createElement("div");
+      sub.className="landing-sub";sub.textContent="九人标准局 · 你与八个村民";
+      const desc=document.createElement("p");
+      desc.className="role-desc";
+      desc.textContent="夜晚:狼人刀人、预言家查验、女巫用药。白天:轮流发言、投票放逐。";
+      const ruleBox=document.createElement("div");
+      ruleBox.className="landing-rules";
+      const aiBox=document.createElement("div");
+      aiBox.className="landing-ai";
+      const refresh=()=>{
+        const r=RULES.ready();
+        ruleBox.innerHTML=
+          "<div class='landing-rules-title'>当前规则</div>"+
+          ["狼人可自刀 · "+(r.allowSelfKnife?"是":"否"),
+           "女巫可自救 · "+(!r.witchCantSaveSelf?"是":"否"),
+           "猎人被毒可开枪 · "+(r.hunterDeadByPoison?"是":"否"),
+           "胜利条件 · "+(r.winCondition==="all_in"?"屠城":"屠边")]
+          .map(l=>"<div class='landing-rules-row'>"+l+"</div>").join("");
+        aiBox.textContent=LLM.ready()
+          ?"AI · 大模型驱动: "+LLM.config.model
+          :"AI · 内置规则 AI(可接入大模型)";
+      };
+      refresh();
+      const row=document.createElement("div");
+      row.className="btn-row";
+      const mk=(text,cls,fn)=>{
+        const b=document.createElement("button");
+        b.type="button";b.className="btn "+(cls||"");b.textContent=text;
+        b.addEventListener("click",async()=>{await fn();});
+        row.appendChild(b);
+      };
+      mk("开始游戏","primary",()=>{ov.remove();res();});
+      mk("修改规则","",async()=>{await view.openRulesModal();refresh();});
+      mk("AI 设置","",async()=>{await view.openSettingsModal();refresh();});
+      m.append(h,sub,desc,ruleBox,aiBox,row);
+      ov.appendChild(m);
+      el.overlayRoot.appendChild(ov);
     });
   },
 
